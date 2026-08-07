@@ -7,6 +7,7 @@ import org.objectweb.asm.ClassReader
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.InsnList
+import org.objectweb.asm.tree.LdcInsnNode
 import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
 import java.lang.instrument.Instrumentation
@@ -78,6 +79,29 @@ object BigShotAgent {
                             "init",
                             "()V"
                         ))
+                    }
+                    "net/minecraft/client/Minecraft" -> {
+                        info.markChanged()
+                        info.computeFrames()
+
+                        val createTitle = MethodPointer.method()
+                            .name("createTitle")
+                            .findOrThrow(node)
+                        val toString = InsnPointer.methodCallInherited()
+                            .name("toString")
+                            .owner("java/lang/StringBuilder")
+                            .lastOrdinal()
+                            .findOrThrow(createTitle.instructions)
+
+                        val insns = InsnList()
+                        insns.add(LdcInsnNode(" + Big Shot Loader"))
+                        insns.add(MethodInsnNode(
+                            Opcodes.INVOKEVIRTUAL,
+                            "java/lang/StringBuilder",
+                            "append",
+                            "(Ljava/lang/String;)Ljava/lang/StringBuilder;"
+                        ))
+                        createTitle.instructions.insertBefore(toString, insns)
                     }
                 }
 
