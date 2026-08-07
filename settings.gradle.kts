@@ -4,3 +4,4 @@ plugins {
 rootProject.name = "big_shot_loader"
 
 include("agent")
+include("installer")
