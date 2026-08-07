@@ -1,12 +1,20 @@
 package net.typho.big_shot.agent
 
 import net.typho.asm_util.ClassOutputInfo
+import net.typho.asm_util.insn.InsnPointer
+import net.typho.asm_util.method.MethodPointer
 import org.objectweb.asm.ClassReader
+import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.ClassNode
+import org.objectweb.asm.tree.InsnList
+import org.objectweb.asm.tree.MethodInsnNode
+import org.objectweb.asm.tree.MethodNode
 import java.lang.instrument.Instrumentation
 import java.nio.file.Files
 import java.nio.file.Paths
+import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.createParentDirectories
+import kotlin.io.path.deleteRecursively
 
 object BigShotAgent {
     @JvmField
@@ -24,22 +32,57 @@ object BigShotAgent {
 
     @JvmStatic
     fun couldTransformClass(className: String): Boolean {
-        return className == "net/fabricmc/loader/impl/FabricLoaderImpl"
+        // TODO
+        return true//className == "net/fabricmc/loader/impl/game/minecraft/launchwrapper/FabricTweaker"
     }
 
+    @OptIn(ExperimentalPathApi::class)
     @JvmStatic
     fun premain(args: String?, inst: Instrumentation) {
+        DEBUG_PATH.deleteRecursively()
+
+        println(inst.allLoadedClasses.filter { it.name.startsWith("net.fabricmc") || it.name.startsWith("org.spongepowered") })
+
         inst.addTransformer { loader, className, classBeingRedefined, domain, bytes ->
             if (couldTransformClass(className)) {
                 val node = ClassNode()
                 ClassReader(bytes).accept(node, 0)
                 val info = ClassOutputInfo(className)
 
-                if (className.equals("net/fabricmc/loader/impl/FabricLoaderImpl")) {
-                    val bigShotLoader = loader.loadClass("net.typho.big_shot.agent.")
+                when (className) {
+                    "net/fabricmc/loader/impl/FabricLoaderImpl" -> {
+                        info.markChanged()
+                        info.computeFrames()
+
+                        val bigShotInit = loader.loadClass("net.typho.big_shot.agent.BigShotInit")
+                        bigShotInit.getField("INSTRUMENTATION").set(null, inst)
+
+                        val clinit = MethodPointer.method()
+                            .name("<clinit>")
+                            .find(node)
+                            .orElseGet {
+                                val method = MethodNode(
+                                    Opcodes.ASM9,
+                                    Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC,
+                                    "<clinit>",
+                                    "()V",
+                                    null,
+                                    null
+                                )
+                                node.methods.add(method)
+                                method
+                            }
+                        clinit.instructions.insert(MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "net/typho/big_shot/agent/BigShotInit",
+                            "init",
+                            "()V"
+                        ))
+                    }
                 }
 
                 info.end()?.let {
+                    node.accept(it)
                     val bytes = it.toByteArray()
                     debugSaveClass(className, bytes)
                     return@addTransformer bytes
