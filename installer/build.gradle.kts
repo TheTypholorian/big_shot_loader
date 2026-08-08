@@ -3,7 +3,7 @@ plugins {
     id("com.gradleup.shadow") version "9.2.0"
 }
 
-group = "net.typho.big_shot_loader"
+group = "net.typho.big_shot"
 version = "1.0.0"
 
 repositories {

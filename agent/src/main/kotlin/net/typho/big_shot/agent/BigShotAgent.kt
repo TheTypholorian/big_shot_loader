@@ -1,21 +1,24 @@
 package net.typho.big_shot.agent
 
-import net.typho.asm_util.ClassOutputInfo
+import net.typho.asm_util.ClassTransformInfo
+import net.typho.asm_util.error.ClassVisitException
 import net.typho.asm_util.insn.InsnPointer
 import net.typho.asm_util.method.MethodPointer
-import org.objectweb.asm.ClassReader
 import org.objectweb.asm.Opcodes
-import org.objectweb.asm.tree.ClassNode
+import org.objectweb.asm.tree.FieldInsnNode
 import org.objectweb.asm.tree.InsnList
 import org.objectweb.asm.tree.LdcInsnNode
 import org.objectweb.asm.tree.MethodInsnNode
-import org.objectweb.asm.tree.MethodNode
+import org.objectweb.asm.tree.VarInsnNode
 import java.lang.instrument.Instrumentation
 import java.nio.file.Files
 import java.nio.file.Paths
+import java.util.jar.JarFile
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.createParentDirectories
 import kotlin.io.path.deleteRecursively
+import kotlin.io.path.outputStream
+import kotlin.io.path.writeBytes
 
 object BigShotAgent {
     @JvmField
@@ -28,13 +31,7 @@ object BigShotAgent {
     ) {
         val path = DEBUG_PATH.resolve("$className.class")
         path.createParentDirectories()
-        Files.write(path, bytes)
-    }
-
-    @JvmStatic
-    fun couldTransformClass(className: String): Boolean {
-        // TODO
-        return true//className == "net/fabricmc/loader/impl/game/minecraft/launchwrapper/FabricTweaker"
+        path.writeBytes(bytes)
     }
 
     @OptIn(ExperimentalPathApi::class)
@@ -42,51 +39,72 @@ object BigShotAgent {
     fun premain(args: String?, inst: Instrumentation) {
         DEBUG_PATH.deleteRecursively()
 
-        println(inst.allLoadedClasses.filter { it.name.startsWith("net.fabricmc") || it.name.startsWith("org.spongepowered") })
+        val loader = Files.createTempDirectory("big_shot_agent").resolve("loader.jar")
+        loader.outputStream().use { output ->
+            javaClass.classLoader.getResourceAsStream("loader.jar").use { input ->
+                input!!.copyTo(output)
+            }
+        }
+        inst.appendToSystemClassLoaderSearch(JarFile(loader.toFile()))
 
-        inst.addTransformer { loader, className, classBeingRedefined, domain, bytes ->
-            if (couldTransformClass(className)) {
-                val node = ClassNode()
-                ClassReader(bytes).accept(node, 0)
-                val info = ClassOutputInfo(className)
+        inst.addTransformer({ loader, className, classBeingRedefined, domain, bytes ->
+            try {
+                val info = ClassTransformInfo(bytes)
 
                 when (className) {
-                    "net/fabricmc/loader/impl/FabricLoaderImpl" -> {
+                    "net/fabricmc/loader/impl/launch/knot/Knot" -> {
                         info.markChanged()
-                        info.computeFrames()
+                        info.computeMaxStacks()
 
-                        val bigShotInit = loader.loadClass("net.typho.big_shot.agent.BigShotInit")
-                        bigShotInit.getField("INSTRUMENTATION").set(null, inst)
-
-                        val clinit = MethodPointer.method()
+                        MethodPointer.method()
                             .name("<clinit>")
-                            .find(node)
-                            .orElseGet {
-                                val method = MethodNode(
-                                    Opcodes.ASM9,
-                                    Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC,
-                                    "<clinit>",
-                                    "()V",
-                                    null,
-                                    null
+                            .findOrThrow(info.node) { method ->
+                                method.instructions.insertBefore(
+                                    InsnPointer.simple()
+                                        .opcode(Opcodes.RETURN)
+                                        .findOrThrow(method.instructions),
+                                    MethodInsnNode(
+                                        Opcodes.INVOKESTATIC,
+                                        "net/typho/big_shot/loader/FabricHooks",
+                                        "clinit",
+                                        "()V"
+                                    )
                                 )
-                                node.methods.add(method)
-                                method
                             }
-                        clinit.instructions.insert(MethodInsnNode(
-                            Opcodes.INVOKESTATIC,
-                            "net/typho/big_shot/agent/BigShotInit",
-                            "init",
-                            "()V"
-                        ))
+                        MethodPointer.method()
+                            .name("init")
+                            .desc("([Ljava/lang/String;)Ljava/lang/ClassLoader;")
+                            .findOrThrow(info.node) { method ->
+                                method.instructions.insert(
+                                    InsnPointer.fieldSet()
+                                        .owner(className)
+                                        .name("provider")
+                                        .findOrThrow(method.instructions),
+                                    InsnList().apply {
+                                        add(VarInsnNode(Opcodes.ALOAD, 0))
+                                        add(FieldInsnNode(
+                                            Opcodes.GETFIELD,
+                                            className,
+                                            "provider",
+                                            "Lnet/fabricmc/loader/impl/game/GameProvider;"
+                                        ))
+                                        add(MethodInsnNode(
+                                            Opcodes.INVOKESTATIC,
+                                            "net/typho/big_shot/loader/FabricHooks",
+                                            "loadGameProvider",
+                                            "(Lnet/fabricmc/loader/impl/game/GameProvider;)V"
+                                        ))
+                                    }
+                                )
+                            }
                     }
                     "net/minecraft/client/Minecraft" -> {
                         info.markChanged()
-                        info.computeFrames()
+                        info.computeMaxStacks()
 
                         val createTitle = MethodPointer.method()
                             .name("createTitle")
-                            .findOrThrow(node)
+                            .findOrThrow(info.node)
                         val toString = InsnPointer.methodCallInherited()
                             .name("toString")
                             .owner("java/lang/StringBuilder")
@@ -105,15 +123,12 @@ object BigShotAgent {
                     }
                 }
 
-                info.end()?.let {
-                    node.accept(it)
-                    val bytes = it.toByteArray()
-                    debugSaveClass(className, bytes)
-                    return@addTransformer bytes
-                }
-            }
+                return@addTransformer info.compile(::debugSaveClass)
+            } catch (t: Throwable) {
+                ClassVisitException("Error while Big Shot Loader was transforming class $className", t).printStackTrace()
 
-            return@addTransformer null
-        }
+                return@addTransformer null
+            }
+        }, true)
     }
 }

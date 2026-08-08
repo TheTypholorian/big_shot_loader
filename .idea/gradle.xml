@@ -11,8 +11,10 @@
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/agent" />
             <option value="$PROJECT_DIR$/installer" />
+            <option value="$PROJECT_DIR$/loader" />
           </set>
         </option>
+        <option name="resolveExternalAnnotations" value="true" />
       </GradleProjectSettings>
     </option>
   </component>

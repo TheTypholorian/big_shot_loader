@@ -1,7 +1,14 @@
-plugins {
-    id("org.gradle.toolchains.foojay-resolver-convention") version "0.8.0"
-}
 rootProject.name = "big_shot_loader"
+
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+        mavenLocal()
+        maven("https://maven.fabricmc.net")
+    }
+}
 
 include("agent")
 include("installer")
+include("loader")
