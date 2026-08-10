@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "package": "net.typho.big_shot.loader.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "mixins": [
+    "JavaMixin"
+  ],
+  "client": [
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+	}
+}

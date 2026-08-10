@@ -39,13 +39,13 @@ object BigShotAgent {
     fun premain(args: String?, inst: Instrumentation) {
         DEBUG_PATH.deleteRecursively()
 
-        val loader = Files.createTempDirectory("big_shot_agent").resolve("loader.jar")
-        loader.outputStream().use { output ->
+        val loaderPath = Files.createTempDirectory("big_shot_agent").resolve("loader.jar")
+        loaderPath.outputStream().use { output ->
             javaClass.classLoader.getResourceAsStream("loader.jar").use { input ->
                 input!!.copyTo(output)
             }
         }
-        inst.appendToSystemClassLoaderSearch(JarFile(loader.toFile()))
+        inst.appendToSystemClassLoaderSearch(JarFile(loaderPath.toFile()))
 
         inst.addTransformer({ loader, className, classBeingRedefined, domain, bytes ->
             try {
@@ -55,6 +55,9 @@ object BigShotAgent {
                     "net/fabricmc/loader/impl/launch/knot/Knot" -> {
                         info.markChanged()
                         info.computeMaxStacks()
+
+                        val hooks = loader.loadClass("net.typho.big_shot.loader.FabricHooks")
+                        hooks.getField("LOADER_PATH").set(null, loaderPath)
 
                         MethodPointer.method()
                             .name("<clinit>")
@@ -93,6 +96,39 @@ object BigShotAgent {
                                             "net/typho/big_shot/loader/FabricHooks",
                                             "loadGameProvider",
                                             "(Lnet/fabricmc/loader/impl/game/GameProvider;)V"
+                                        ))
+                                    }
+                                )
+                                method.instructions.insert(
+                                    InsnPointer.methodCallStatic()
+                                        .owner("net/fabricmc/loader/impl/launch/FabricLauncherBase")
+                                        .name("finishMixinBootstrapping")
+                                        .findOrThrow(method.instructions),
+                                    InsnList().apply {
+                                        add(MethodInsnNode(
+                                            Opcodes.INVOKESTATIC,
+                                            "net/typho/big_shot/loader/FabricHooks",
+                                            "registerMixins",
+                                            "()V"
+                                        ))
+                                    }
+                                )
+                            }
+                    }
+                    "net/fabricmc/loader/impl/FabricLoaderImpl" -> {
+                        info.markChanged()
+                        info.computeMaxStacks()
+
+                        MethodPointer.method()
+                            .name("finishModLoading")
+                            .findOrThrow(info.node) { method ->
+                                method.instructions.insert(
+                                    InsnList().apply {
+                                        add(MethodInsnNode(
+                                            Opcodes.INVOKESTATIC,
+                                            "net/typho/big_shot/loader/FabricHooks",
+                                            "finishModLoading",
+                                            "()V"
                                         ))
                                     }
                                 )
