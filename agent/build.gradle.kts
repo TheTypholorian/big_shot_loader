@@ -46,7 +46,7 @@ kotlin {
 }
 
 tasks.processResources {
-    dependsOn(project(":loader").tasks.jar)
+    dependsOn(project(":loader").tasks.shadowJar)
 }
 
 tasks.shadowJar {

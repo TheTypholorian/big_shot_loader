@@ -3,7 +3,8 @@
   "package": "net.typho.big_shot.loader.mixin",
   "compatibilityLevel": "JAVA_25",
   "mixins": [
-    "JavaMixin"
+    "JavaMixin",
+    "KotlinMixin"
   ],
   "client": [
   ],

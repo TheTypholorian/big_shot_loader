@@ -7,6 +7,7 @@ import net.typho.asm_util.method.MethodPointer
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.FieldInsnNode
 import org.objectweb.asm.tree.InsnList
+import org.objectweb.asm.tree.InsnNode
 import org.objectweb.asm.tree.LdcInsnNode
 import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.VarInsnNode
@@ -130,6 +131,32 @@ object BigShotAgent {
                                             "finishModLoading",
                                             "()V"
                                         ))
+                                    }
+                                )
+                            }
+                    }
+                    "org/spongepowered/asm/mixin/transformer/MixinInfo" -> {
+                        info.markChanged()
+                        info.computeMaxStacks()
+
+                        MethodPointer.method()
+                            .name("loadMixinClass")
+                            .desc("(Ljava/lang/String;)Lorg/objectweb/asm/tree/ClassNode;")
+                            .findOrThrow(info.node) { method ->
+                                method.instructions.insertBefore(
+                                    InsnPointer.simple()
+                                        .opcode(Opcodes.ARETURN)
+                                        .lastOrdinal()
+                                        .findOrThrow(method.instructions),
+                                    InsnList().apply {
+                                        add(InsnNode(Opcodes.DUP))
+                                        add(MethodInsnNode(
+                                            Opcodes.INVOKESTATIC,
+                                            "net/typho/big_shot/loader/util/mixin/KotlinMixinFixer",
+                                            "fix",
+                                            "(Lorg/objectweb/asm/tree/ClassNode;)Z"
+                                        ))
+                                        add(InsnNode(Opcodes.POP))
                                     }
                                 )
                             }

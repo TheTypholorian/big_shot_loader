@@ -12,5 +12,5 @@ pluginManagement {
 include("agent")
 include("installer")
 include("loader")
-include("test_mod")
+//include("test_mod")
 includeBuild("gradle_plugin")
