@@ -4,14 +4,27 @@
   <component name="GradleSettings">
     <option name="linkedExternalProjectsSettings">
       <GradleProjectSettings>
+        <compositeConfiguration>
+          <compositeBuild compositeDefinitionSource="SCRIPT">
+            <builds>
+              <build path="$PROJECT_DIR$/gradle_plugin" name="gradle_plugin">
+                <projects>
+                  <project path="$PROJECT_DIR$/gradle_plugin" />
+                </projects>
+              </build>
+            </builds>
+          </compositeBuild>
+        </compositeConfiguration>
         <option name="externalProjectPath" value="$PROJECT_DIR$" />
         <option name="gradleJvm" value="25" />
         <option name="modules">
           <set>
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/agent" />
+            <option value="$PROJECT_DIR$/gradle_plugin" />
             <option value="$PROJECT_DIR$/installer" />
             <option value="$PROJECT_DIR$/loader" />
+            <option value="$PROJECT_DIR$/test_mod" />
           </set>
         </option>
         <option name="resolveExternalAnnotations" value="true" />

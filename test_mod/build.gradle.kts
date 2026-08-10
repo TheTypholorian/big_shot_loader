@@ -29,13 +29,14 @@ dependencies {
     compileOnly("net.fabricmc:fabric-loader:0.19.3")
 
     implementation(kotlin("stdlib"))
+    implementation(project(":loader"))
 
-    compileOnly("org.ow2.asm:asm:9.10.1")
-    compileOnly("org.ow2.asm:asm-tree:9.10.1")
-    compileOnly("org.ow2.asm:asm-util:9.10.1")
-    compileOnly("org.ow2.asm:asm-commons:9.10.1")
-    compileOnly("org.jetbrains:annotations:26.0.2")
-    compileOnly("org.spongepowered:mixin:0.8.5")
+    implementation("org.ow2.asm:asm:9.10.1")
+    implementation("org.ow2.asm:asm-tree:9.10.1")
+    implementation("org.ow2.asm:asm-util:9.10.1")
+    implementation("org.ow2.asm:asm-commons:9.10.1")
+    implementation("org.jetbrains:annotations:26.0.2")
+    implementation("org.spongepowered:mixin:0.8.5")
     implementation("net.typho:asm_util:1.0.11")
 }
 
@@ -45,6 +46,5 @@ kotlin {
 
 tasks.jar {
     archiveVersion.set("")
-    destinationDirectory.set(project(":agent").file("src/main/resources"))
-    dependsOn(project(":test_mod").tasks.jar)
+    destinationDirectory.set(File("${System.getenv("appdata")}/ModrinthApp/profiles/big shot testing/big_shot_mods"))
 }

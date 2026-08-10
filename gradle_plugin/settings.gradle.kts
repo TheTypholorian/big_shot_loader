@@ -1,4 +1,4 @@
-rootProject.name = "big_shot_loader"
+rootProject.name = "gradle_plugin"
 
 pluginManagement {
     repositories {
@@ -8,9 +8,3 @@ pluginManagement {
         maven("https://maven.fabricmc.net")
     }
 }
-
-include("agent")
-include("installer")
-include("loader")
-include("test_mod")
-includeBuild("gradle_plugin")
