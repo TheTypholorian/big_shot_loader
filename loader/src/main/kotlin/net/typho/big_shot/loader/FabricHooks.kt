@@ -6,9 +6,6 @@ import org.spongepowered.asm.mixin.Mixins
 import java.nio.file.Path
 
 object FabricHooks {
-    @get:JvmName("getLoaderPath")
-    lateinit var LOADER_PATH: Path
-
     @JvmStatic
     fun clinit() {
         println("loaded into a bright future with mucho shenanigans to come")
@@ -27,6 +24,6 @@ object FabricHooks {
 
     @JvmStatic
     fun finishModLoading() {
-        FabricLauncherBase.getLauncher().addToClassPath(LOADER_PATH)
+        FabricLauncherBase.getLauncher().addToClassPath(BigShotLoader.LOADER_PATH)
     }
 }

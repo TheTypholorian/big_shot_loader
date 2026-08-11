@@ -57,8 +57,10 @@ object BigShotAgent {
                         info.markChanged()
                         info.computeMaxStacks()
 
-                        val hooks = loader.loadClass("net.typho.big_shot.loader.FabricHooks")
-                        hooks.getField("LOADER_PATH").set(null, loaderPath)
+                        val bigShotLoader = loader.loadClass("net.typho.big_shot.loader.BigShotLoader")
+                        bigShotLoader.getField("LOADER_PATH").set(null, loaderPath)
+                        bigShotLoader.getField("INSTRUMENTATION").set(null, inst)
+                        bigShotLoader.getMethod("onInstrumentationInit").invoke(null)
 
                         MethodPointer.method()
                             .name("<clinit>")
@@ -160,29 +162,6 @@ object BigShotAgent {
                                     }
                                 )
                             }
-                    }
-                    "net/minecraft/client/Minecraft" -> {
-                        info.markChanged()
-                        info.computeMaxStacks()
-
-                        val createTitle = MethodPointer.method()
-                            .name("createTitle")
-                            .findOrThrow(info.node)
-                        val toString = InsnPointer.methodCallInherited()
-                            .name("toString")
-                            .owner("java/lang/StringBuilder")
-                            .lastOrdinal()
-                            .findOrThrow(createTitle.instructions)
-
-                        val insns = InsnList()
-                        insns.add(LdcInsnNode(" + Big Shot Loader"))
-                        insns.add(MethodInsnNode(
-                            Opcodes.INVOKEVIRTUAL,
-                            "java/lang/StringBuilder",
-                            "append",
-                            "(Ljava/lang/String;)Ljava/lang/StringBuilder;"
-                        ))
-                        createTitle.instructions.insertBefore(toString, insns)
                     }
                 }
 

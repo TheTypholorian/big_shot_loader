@@ -5,7 +5,6 @@ import net.typho.asm_util.ASMUtil.splice
 import net.typho.asm_util.insn.InsnPointer
 import net.typho.asm_util.method.MethodPointer
 import net.typho.asm_util.remap.CompatClassRemapper
-import net.typho.asm_util.remap.CompatFieldRemapper
 import net.typho.big_shot.loader.BigShotLoader
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes

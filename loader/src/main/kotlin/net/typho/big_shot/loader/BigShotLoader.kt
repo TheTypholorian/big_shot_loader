@@ -1,11 +1,14 @@
 package net.typho.big_shot.loader
 
 import java.lang.instrument.Instrumentation
+import java.nio.file.Path
 import java.nio.file.Paths
 import kotlin.io.path.createParentDirectories
 import kotlin.io.path.writeBytes
 
 object BigShotLoader {
+    @get:JvmName("getLoaderPath")
+    lateinit var LOADER_PATH: Path
     @get:JvmName("getInstrumentation")
     lateinit var INSTRUMENTATION: Instrumentation
     @JvmField
@@ -19,6 +22,10 @@ object BigShotLoader {
         val path = DEBUG_PATH.resolve("$className.class")
         path.createParentDirectories()
         path.writeBytes(bytes)
+    }
+
+    @JvmStatic
+    fun onInstrumentationInit() {
     }
 
     @JvmStatic
