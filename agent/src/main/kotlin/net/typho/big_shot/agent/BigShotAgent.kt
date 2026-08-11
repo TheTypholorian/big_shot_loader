@@ -50,7 +50,7 @@ object BigShotAgent {
 
         inst.addTransformer({ loader, className, classBeingRedefined, domain, bytes ->
             try {
-                val info = ClassTransformInfo(bytes)
+                val info = ClassTransformInfo.AgentTransform(bytes)
 
                 when (className) {
                     "net/fabricmc/loader/impl/launch/knot/Knot" -> {
@@ -167,7 +167,7 @@ object BigShotAgent {
 
                 return@addTransformer info.compile(::debugSaveClass)
             } catch (t: Throwable) {
-                ClassVisitException("Error while Big Shot Loader was transforming class $className", t).printStackTrace()
+                ClassVisitException("Error while Big Shot Agent was transforming class $className", t).printStackTrace()
 
                 return@addTransformer null
             }
