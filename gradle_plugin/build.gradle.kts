@@ -27,7 +27,7 @@ dependencies {
     implementation("org.ow2.asm:asm-tree:9.10.1")
     implementation("org.ow2.asm:asm-util:9.10.1")
     implementation("org.ow2.asm:asm-commons:9.10.1")
-    implementation("net.typho:asm_util:1.0.11")
+    implementation("net.typho:asm_util:1.0.12")
 }
 
 gradlePlugin {
