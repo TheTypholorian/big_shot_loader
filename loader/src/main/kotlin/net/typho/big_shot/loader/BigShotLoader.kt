@@ -6,6 +6,7 @@ import net.typho.big_shot.loader.util.EventGraph
 import net.typho.big_shot.loader.util.inst.TransformEvent
 import net.typho.big_shot.loader.util.inst.TransformType
 import net.typho.big_shot.loader.util.mixin.KotlinMixinFixer
+import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.tree.ClassNode
 import java.lang.instrument.ClassFileTransformer
 import java.lang.instrument.Instrumentation
@@ -38,6 +39,15 @@ object BigShotLoader {
 
     @JvmStatic
     fun debugSaveClass(
+        node: ClassNode
+    ) {
+        val writer = ClassWriter(0)
+        node.accept(writer)
+        debugSaveClass(node.name, writer.toByteArray())
+    }
+
+    @JvmStatic
+    fun debugSaveClass(
         className: String,
         bytes: ByteArray
     ) {
@@ -46,6 +56,7 @@ object BigShotLoader {
         path.writeBytes(bytes)
     }
 
+    @Suppress("unused")
     @JvmStatic
     fun onInstrumentationInit() {
         INSTRUMENTATION.addTransformer(object : ClassFileTransformer {
@@ -74,8 +85,9 @@ object BigShotLoader {
         }, true)
     }
 
+    @Suppress("unused")
     @JvmStatic
-    fun transformMixin(node: ClassNode) {
+    fun transformMixinClass(node: ClassNode) {
         val info = ClassTransformInfo.Wrapper(node)
 
         TRANSFORM_EVENTS.execute { id, event ->
@@ -84,8 +96,13 @@ object BigShotLoader {
         }
 
         info.checkErrors()
+
+        if (info.changed) {
+            debugSaveClass(node)
+        }
     }
 
+    @Suppress("unused")
     @JvmStatic
     fun onLoaderInit() {
         println("yay loader init! $INSTRUMENTATION")

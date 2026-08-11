@@ -5,6 +5,7 @@ import net.fabricmc.loader.impl.launch.FabricLauncherBase
 import org.spongepowered.asm.mixin.Mixins
 import java.nio.file.Path
 
+@Suppress("unused")
 object FabricHooks {
     @JvmStatic
     fun clinit() {

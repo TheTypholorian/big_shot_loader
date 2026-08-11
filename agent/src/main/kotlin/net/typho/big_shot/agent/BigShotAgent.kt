@@ -154,11 +154,10 @@ object BigShotAgent {
                                         add(InsnNode(Opcodes.DUP))
                                         add(MethodInsnNode(
                                             Opcodes.INVOKESTATIC,
-                                            "net/typho/big_shot/loader/util/mixin/KotlinMixinFixer",
-                                            "fix",
-                                            "(Lorg/objectweb/asm/tree/ClassNode;)Z"
+                                            "net/typho/big_shot/loader/BigShotLoader",
+                                            "transformMixinClass",
+                                            "(Lorg/objectweb/asm/tree/ClassNode;)V"
                                         ))
-                                        add(InsnNode(Opcodes.POP))
                                     }
                                 )
                             }
