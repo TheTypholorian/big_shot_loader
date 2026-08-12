@@ -29,7 +29,7 @@ open class EventGraph<K : Any, T : Any> {
     }
 
     @JvmField
-    protected val events = mutableListOf<Event>()
+    protected var events = mutableListOf<Event>()
     @JvmField
     protected var resolved = true
 
@@ -40,6 +40,7 @@ open class EventGraph<K : Any, T : Any> {
         register(id, event, listOf(), listOf())
     }
 
+    @Synchronized
     fun register(
         id: K,
         event: T,
@@ -50,7 +51,7 @@ open class EventGraph<K : Any, T : Any> {
             throw IllegalArgumentException("Registered duplicate event '$id'")
         }
 
-        events.add(Event(id, event, runThisBefore, runThisAfter))
+        events.add(Event(id, event, runThisBefore.toList(), runThisAfter.toList()))
         resolved = false
     }
 
@@ -62,6 +63,7 @@ open class EventGraph<K : Any, T : Any> {
         resolve().forEach { out.accept(it.id, it.event) }
     }
 
+    @Synchronized
     fun resolve(): List<Event> {
         if (!resolved) {
             val lookup = events.associateBy { it.id }
@@ -106,12 +108,20 @@ open class EventGraph<K : Any, T : Any> {
                 throw IllegalStateException("Event graph contains a cycle")
             }
 
-            events.clear()
-            events.addAll(result)
-
+            events = result
             resolved = true
+            return result
         }
 
         return events
+    }
+
+    @Synchronized
+    override fun toString(): String {
+        return if (events.isEmpty()) {
+            "No events"
+        } else {
+            events.joinToString(separator = "\n", prefix = if (resolved) "Resolved\n" else "Unresolved\n", transform = { "${it.id}[${it.event}]" })
+        }
     }
 }

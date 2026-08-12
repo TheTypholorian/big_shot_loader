@@ -7,6 +7,7 @@ import net.typho.big_shot.loader.util.inst.TransformEvent
 import net.typho.big_shot.loader.util.inst.TransformType
 import net.typho.big_shot.loader.util.mixin.KotlinMixinFixer
 import org.objectweb.asm.ClassWriter
+import org.objectweb.asm.commons.Remapper
 import org.objectweb.asm.tree.ClassNode
 import java.lang.instrument.ClassFileTransformer
 import java.lang.instrument.Instrumentation
@@ -21,6 +22,8 @@ object BigShotLoader {
     lateinit var INSTRUMENTATION: Instrumentation
     @JvmField
     val TRANSFORM_EVENTS = EventGraph<String, TransformEvent>()
+    @JvmField
+    val REMAP_EVENTS = EventGraph<String, Remapper>()
 
     @get:JvmName("getLoaderPath")
     lateinit var LOADER_PATH: Path
@@ -77,7 +80,7 @@ object BigShotLoader {
 
                     return info.compile(::debugSaveClass)
                 } catch (t: Throwable) {
-                    ClassVisitException("Error while Big Shot Loader was transforming class $className", t).printStackTrace()
+                    ClassVisitException("Error transforming class $className\nTransform event graph:\n$TRANSFORM_EVENTS", t).printStackTrace()
 
                     return null
                 }
@@ -88,17 +91,21 @@ object BigShotLoader {
     @Suppress("unused")
     @JvmStatic
     fun transformMixinClass(node: ClassNode) {
-        val info = ClassTransformInfo.Wrapper(node)
+        try {
+            val info = ClassTransformInfo.Wrapper(node)
 
-        TRANSFORM_EVENTS.execute { id, event ->
-            info.fallbackErrorSource = id
-            event.transform(TransformType.MIXIN, info)
-        }
+            TRANSFORM_EVENTS.execute { id, event ->
+                info.fallbackErrorSource = id
+                event.transform(TransformType.MIXIN, info)
+            }
 
-        info.checkErrors()
+            info.checkErrors()
 
-        if (info.changed) {
-            debugSaveClass(node)
+            if (info.changed) {
+                debugSaveClass(node)
+            }
+        } catch (t: Throwable) {
+            throw ClassVisitException("Error transforming mixin class ${node.name}\nTransform event graph:\n$TRANSFORM_EVENTS", t)
         }
     }
 
