@@ -10,9 +10,9 @@ open class EventGraph<K : Any, T : Any> {
         @JvmField
         val event: T,
         @JvmField
-        val runThisBefore: List<K>,
+        val runThisBefore: MutableList<K> = mutableListOf(),
         @JvmField
-        val runThisAfter: List<K>
+        val runThisAfter: MutableList<K> = mutableListOf()
     ) {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -26,6 +26,18 @@ open class EventGraph<K : Any, T : Any> {
         override fun hashCode(): Int {
             return id.hashCode()
         }
+
+        fun before(id: K): EventGraph<K, T>.Event {
+            runThisBefore.add(id)
+            resolved = false
+            return this
+        }
+
+        fun after(id: K): EventGraph<K, T>.Event {
+            runThisAfter.add(id)
+            resolved = false
+            return this
+        }
     }
 
     @JvmField
@@ -33,26 +45,19 @@ open class EventGraph<K : Any, T : Any> {
     @JvmField
     protected var resolved = true
 
-    fun register(
-        id: K,
-        event: T
-    ) {
-        register(id, event, listOf(), listOf())
-    }
-
     @Synchronized
     fun register(
         id: K,
         event: T,
-        runThisBefore: List<K>,
-        runThisAfter: List<K>
-    ) {
+    ): Event {
         if (events.any { it.id == id }) {
             throw IllegalArgumentException("Registered duplicate event '$id'")
         }
 
-        events.add(Event(id, event, runThisBefore.toList(), runThisAfter.toList()))
+        val event = Event(id, event)
+        events.add(event)
         resolved = false
+        return event
     }
 
     fun execute(out: Consumer<T>) {

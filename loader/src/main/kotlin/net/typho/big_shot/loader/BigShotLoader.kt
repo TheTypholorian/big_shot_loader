@@ -2,10 +2,13 @@ package net.typho.big_shot.loader
 
 import net.typho.asm_util.ClassTransformInfo
 import net.typho.asm_util.error.ClassVisitException
+import net.typho.asm_util.remap.CompatClassRemapper
+import net.typho.big_shot.loader.constant.TransformEventNames
 import net.typho.big_shot.loader.util.EventGraph
 import net.typho.big_shot.loader.util.inst.TransformEvent
 import net.typho.big_shot.loader.util.inst.TransformType
 import net.typho.big_shot.loader.util.mixin.KotlinMixinFixer
+import org.objectweb.asm.ClassVisitor
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.commons.Remapper
 import org.objectweb.asm.tree.ClassNode
@@ -14,6 +17,7 @@ import java.lang.instrument.Instrumentation
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.security.ProtectionDomain
+import java.util.function.Function
 import kotlin.io.path.createParentDirectories
 import kotlin.io.path.writeBytes
 
@@ -23,7 +27,7 @@ object BigShotLoader {
     @JvmField
     val TRANSFORM_EVENTS = EventGraph<String, TransformEvent>()
     @JvmField
-    val REMAP_EVENTS = EventGraph<String, Remapper>()
+    val REMAP_EVENTS = EventGraph<String, Function<ClassTransformInfo, Remapper?>>()
 
     @get:JvmName("getLoaderPath")
     lateinit var LOADER_PATH: Path
@@ -31,13 +35,22 @@ object BigShotLoader {
     val DEBUG_PATH = Paths.get(".big_shot_debug")
 
     init {
-        TRANSFORM_EVENTS.register("big_shot:kotlin_mixins") { type, info ->
+        TRANSFORM_EVENTS.register(TransformEventNames.KOTLIN_MIXIN_FIXER) { type, info ->
             if (type == TransformType.MIXIN) {
                 if (KotlinMixinFixer.fix(info.node)) {
                     info.markChanged()
                 }
             }
         }
+        TRANSFORM_EVENTS.register(TransformEventNames.REMAP) { type, info ->
+            val newNode = ClassNode()
+            val visitor = REMAP_EVENTS.resolve().foldRight(newNode as ClassVisitor) { event, accum ->
+                val remapper = event.event.apply(info)
+                if (remapper == null) accum else CompatClassRemapper(accum, remapper)
+            }
+            info.node.accept(visitor)
+            info.node = newNode
+        }.after(TransformEventNames.KOTLIN_MIXIN_FIXER) // we want to remap after kotlin mixins are fixed, since companion objects
     }
 
     @JvmStatic
