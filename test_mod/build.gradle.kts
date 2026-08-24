@@ -9,19 +9,7 @@ version = "1.0.0"
 repositories {
     mavenCentral()
     maven("https://repo.spongepowered.org/repository/maven-public/")
-    ivy("https://github.com/TheTypholorian/asm_util/releases/download") {
-        patternLayout {
-            artifact("[revision]/[artifact]-[revision](-[classifier]).[ext]")
-        }
-
-        metadataSources {
-            artifact()
-        }
-
-        content {
-            includeGroup("net.typho")
-        }
-    }
+    maven("https://typho.net/maven")
 }
 
 dependencies {
@@ -37,7 +25,7 @@ dependencies {
     implementation("org.ow2.asm:asm-commons:9.10.1")
     implementation("org.jetbrains:annotations:26.0.2")
     implementation("org.spongepowered:mixin:0.8.5")
-    implementation("net.typho:asm_util:1.0.16")
+    implementation("net.typho:asm_util:1.1.1")
 }
 
 kotlin {
