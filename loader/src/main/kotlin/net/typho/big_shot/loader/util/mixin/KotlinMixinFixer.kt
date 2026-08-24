@@ -1,7 +1,7 @@
 package net.typho.big_shot.loader.util.mixin
 
-import net.typho.asm_util.ASMUtil.kotlinMetadata
 import net.typho.asm_util.ASMUtil.splice
+import net.typho.asm_util.KotlinUtil.kotlinMetadata
 import net.typho.asm_util.insn.InsnPointer
 import net.typho.asm_util.method.MethodPointer
 import net.typho.asm_util.remap.CompatClassRemapper

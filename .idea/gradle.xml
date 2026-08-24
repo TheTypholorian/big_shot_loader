@@ -9,6 +9,7 @@
             <builds>
               <build path="$PROJECT_DIR$/gradle_plugin" name="gradle_plugin">
                 <projects>
+                  <project path="$PROJECT_DIR$/data" />
                   <project path="$PROJECT_DIR$/gradle_plugin" />
                 </projects>
               </build>
@@ -25,6 +26,7 @@
             <option value="$PROJECT_DIR$/gradle_plugin" />
             <option value="$PROJECT_DIR$/installer" />
             <option value="$PROJECT_DIR$/loader" />
+            <option value="$PROJECT_DIR$/test_mod" />
           </set>
         </option>
         <option name="resolveExternalAnnotations" value="true" />

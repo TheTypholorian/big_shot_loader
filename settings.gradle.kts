@@ -6,12 +6,13 @@ pluginManagement {
         mavenCentral()
         mavenLocal()
         maven("https://maven.fabricmc.net")
+        maven("https://typho.net/maven")
     }
 }
 
 include("agent")
 include("installer")
 include("loader")
-//include("test_mod")
+include("test_mod")
 includeBuild("gradle_plugin")
 include("data")
