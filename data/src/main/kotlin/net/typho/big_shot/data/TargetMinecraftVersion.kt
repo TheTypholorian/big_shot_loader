@@ -1,6 +1,8 @@
 package net.typho.big_shot.data
 
+import net.typho.data_util.codec.Codec
 import net.typho.data_util.impl.JsonFormat
+
 import java.io.Serializable
 import java.net.HttpURLConnection
 import java.net.URI
@@ -11,7 +13,7 @@ data class TargetMinecraftVersion(
     @JvmField
     val versions: List<String>,
     @JvmField
-    val javaVersion: Int
+    val info: Info
 ) : Serializable {
     /**
      * The Minecraft version range for fabric/quilt
@@ -60,6 +62,70 @@ data class TargetMinecraftVersion(
         return "MCVersion(primaryVersion='$primaryVersion', additionalVersions=$additionalVersions, parchmentVersion=${parchmentVersion?.let { "${it.first}:${it.second}" }}, fabricVersionRange='$fabricVersionRange', forgeVersionRange='$forgeVersionRange')"
     }
 
+    data class Info(
+        @JvmField
+        val downloads: MCDownloads,
+        @JvmField
+        val id: String,
+        @JvmField
+        val javaVersion: JavaVersion?,
+        @JvmField
+        val libraries: List<Library>
+    ) {
+        companion object {
+            @JvmField
+            val CODEC = Codec.reflect(Info::class.java)
+        }
+
+        data class JavaVersion(
+            @JvmField
+            val component: String,
+            @JvmField
+            val majorVersion: Int
+        ) {
+            companion object {
+                @JvmField
+                val CODEC = Codec.reflect(JavaVersion::class.java)
+            }
+        }
+
+        data class Download(
+            @JvmField
+            val sha1: String?,
+            @JvmField
+            val size: Int,
+            @JvmField
+            val url: String
+        ) {
+            companion object {
+                @JvmField
+                val CODEC = Codec.reflect(Download::class.java)
+            }
+        }
+
+        data class MCDownloads(
+            @JvmField
+            val client: Download,
+            @JvmField
+            val server: Download?
+        ) {
+            companion object {
+                @JvmField
+                val CODEC = Codec.reflect(MCDownloads::class.java)
+            }
+        }
+
+        data class Library(
+            @JvmField
+            val name: String
+        ) {
+            companion object {
+                @JvmField
+                val CODEC = Codec.reflect(Library::class.java)
+            }
+        }
+    }
+
     companion object {
         /**
          * Most recent versions are at the start of the list
@@ -87,25 +153,16 @@ data class TargetMinecraftVersion(
         }
 
         init {
-            val connection = URI.create("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json").toURL().openConnection() as HttpURLConnection
-            connection.requestMethod = "GET"
-
-            if (connection.responseCode == 404) {
-                throw RuntimeException("[Big Shot Lib] Unable to get Minecraft version manifest")
-            }
-
-            val body = connection.getInputStream().bufferedReader().use { it.readText() }
-            val versions = ((JsonFormat().read(body) as Map<*, *>)["versions"] as List<*>)
+            val versions = MinecraftVersionsManifest.INSTANCE.versions
                 .asSequence()
-                .map { it as Map<*, *> }
-                .filter { it["type"] == "release" }
-                .map { Triple(it["id"] as String, Instant.parse(it["releaseTime"] as String), it["url"] as? String) }
+                .filter { it.type == "release" }
+                .map { Triple(it.id, Instant.parse(it.releaseTime), it.url) }
                 .sortedWith { a, b -> a.second.compareTo(b.second) }
                 .map { it.first to it.third }
                 .toList()
             versions.mapTo(VERSION_SORT_ORDER) { it.first }
 
-            val multiVersions = linkedMapOf<String, Pair<MutableList<String>, Int>>()
+            val multiVersions = linkedMapOf<String, Pair<MutableList<String>, Info>>()
             val gameDropIndex = versions.indexOfFirst { it.first == "26.1" }
 
             versions.forEachIndexed { index, (version, url) ->
@@ -122,26 +179,23 @@ data class TargetMinecraftVersion(
                 }
 
                 multiVersions.computeIfAbsent(groupVersion) {
-                    val java = if (url == null) {
-                        8
-                    } else {
-                        val connection = URI.create(url).toURL().openConnection() as HttpURLConnection
-                        connection.requestMethod = "GET"
+                    val connection = URI.create(url).toURL().openConnection() as HttpURLConnection
+                    connection.requestMethod = "GET"
 
-                        if (connection.responseCode == 404) {
-                            throw RuntimeException("[Big Shot Lib] Unable to get Minecraft version data for $version")
-                        }
-
-                        val body = connection.getInputStream().bufferedReader().use { it.readText() }
-                        ((JsonFormat().read(body) as? Map<*, *>)?.get("javaVersion") as? Map<*, *>)?.get("majorVersion") as? Int ?: 8
+                    if (connection.responseCode == 404) {
+                        throw RuntimeException("[Big Shot Lib] Unable to get Minecraft version data for $version")
                     }
 
-                    mutableListOf<String>() to java
+                    val body = connection.getInputStream().bufferedReader().use { it.readText() }
+                    println(version)
+                    val info = JsonFormat().read(Info.CODEC, body)
+
+                    mutableListOf<String>() to info
                 }.first.add(version)
             }
 
-            for ((version, java) in multiVersions.values) {
-                VERSIONS.add(TargetMinecraftVersion(version, java))
+            for ((version, info) in multiVersions.values) {
+                VERSIONS.add(TargetMinecraftVersion(version, info))
             }
 
             VERSIONS.reverse()
@@ -180,7 +234,7 @@ data class TargetMinecraftVersion(
 
         @JvmStatic
         fun getMinJavaVersion(versions: Iterable<String>): Int {
-            return versions.minOfOrNull { get(it).javaVersion } ?: 8
+            return versions.minOfOrNull { get(it).info.javaVersion?.majorVersion ?: 8 } ?: 8
         }
     }
 }

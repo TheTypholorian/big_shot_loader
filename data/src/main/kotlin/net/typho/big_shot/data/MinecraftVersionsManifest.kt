@@ -1,8 +1,11 @@
 package net.typho.big_shot.data
 
 import net.typho.data_util.codec.Codec
+import net.typho.data_util.impl.JsonFormat
+import java.net.HttpURLConnection
+import java.net.URI
 
-data class MinecraftVersionManifest(
+data class MinecraftVersionsManifest(
     @JvmField
     val latest: Latest,
     @JvmField
@@ -10,7 +13,22 @@ data class MinecraftVersionManifest(
 ) {
     companion object {
         @JvmField
-        val CODEC = Codec.reflect(MinecraftVersionManifest::class.java)
+        val CODEC = Codec.reflect(MinecraftVersionsManifest::class.java)
+        val INSTANCE by lazy {
+            val connection = URI.create("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json").toURL().openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+
+            if (connection.responseCode == 404) {
+                throw RuntimeException("[Big Shot Lib] Unable to get Minecraft version manifest")
+            }
+
+            val body = connection.getInputStream().bufferedReader().use { it.readText() }
+            JsonFormat().read(CODEC, body)
+        }
+
+        init {
+            println(CODEC)
+        }
     }
 
     data class Latest(

@@ -13,7 +13,7 @@ repositories {
 
 dependencies {
     implementation(project(":loader"))
-    minecraft("com.mojang:minecraft:26.2")
+    //minecraft("com.mojang:minecraft:26.2")
 }
 
 kotlin {

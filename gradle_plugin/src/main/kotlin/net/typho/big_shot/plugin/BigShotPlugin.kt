@@ -1,12 +1,19 @@
 package net.typho.big_shot.plugin
 
+import net.typho.big_shot.data.TargetMinecraftVersion
 import net.typho.big_shot.plugin.transform.MinecraftTransformAction
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.artifacts.type.ArtifactTypeDefinition
 
 class BigShotPlugin : Plugin<Project> {
+    init {
+        println("new plugin")
+    }
+
     override fun apply(project: Project) {
+        val version = TargetMinecraftVersion["26.2"]
+
         project.dependencies.registerTransform(MinecraftTransformAction::class.java) {
             it.from.attribute(
                 ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE,
@@ -28,12 +35,14 @@ class BigShotPlugin : Plugin<Project> {
             )
         }
 
-        project.repositories.ivy {
-            it.patternLayout {
-                it.
-            }
+        project.dependencies.add("implementation", minecraft.incoming.artifactView {}.files)
+
+        project.repositories.maven {
+            it.setUrl("https://libraries.minecraft.net")
         }
 
-        project.dependencies.add("implementation", minecraft.incoming.artifactView {}.files)
+        for (lib in version.info.libraries) {
+            project.dependencies.add("implementation", lib.name)
+        }
     }
 }
