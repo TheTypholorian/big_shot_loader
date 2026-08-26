@@ -1,9 +1,9 @@
 package net.typho.big_shot.test_mod
 
-import com.google.gson.Gson
+import net.minecraft.client.Minecraft
 
 object TestModInit {
     init {
-        Gson()
+        Minecraft.getInstance().player
     }
 }

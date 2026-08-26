@@ -19,6 +19,15 @@ dependencies {
     implementation("org.ow2.asm:asm-tree:9.10.1")
     implementation("org.ow2.asm:asm-util:9.10.1")
     implementation("org.ow2.asm:asm-commons:9.10.1")
+
+    implementation("org.apache.maven:maven-model:3.9.11")
+    implementation("org.apache.maven.resolver:maven-resolver-api:2.0.21")
+    implementation("org.apache.maven.resolver:maven-resolver-util:2.0.21")
+    implementation("org.apache.maven.resolver:maven-resolver-impl:2.0.21")
+    implementation("org.apache.maven.resolver:maven-resolver-connector-basic:2.0.21")
+    implementation("org.apache.maven.resolver:maven-resolver-transport-file:2.0.21")
+    implementation("org.apache.maven.resolver:maven-resolver-supplier-mvn3:2.0.21")
+
     implementation("net.typho:asm_util:1.1.1")
     implementation(project(":data"))
 }
