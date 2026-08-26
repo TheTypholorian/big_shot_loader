@@ -13,9 +13,41 @@ repositories {
 
 dependencies {
     implementation(project(":loader"))
-    //minecraft("com.mojang:minecraft:26.2")
 }
 
 kotlin {
     jvmToolchain(25)
+}
+
+tasks.register("debugMinecraftAttributes") {
+    doLast {
+        configurations.getByName("minecraft").let { configuration ->
+            println("CONFIGURATION: ${configuration.name}")
+            println("ATTRIBUTES: ${configuration.attributes}")
+
+            configuration.incoming.resolutionResult.allComponents.forEach { component ->
+                println()
+                println("COMPONENT: ${component.id}")
+
+                component.variants.forEach { variant ->
+                    println("  VARIANT: ${variant.displayName}")
+                    println("  ATTRIBUTES: ${variant.attributes}")
+                }
+            }
+        }
+        configurations.getByName("compileClasspath").let { configuration ->
+            println("CONFIGURATION: ${configuration.name}")
+            println("ATTRIBUTES: ${configuration.attributes}")
+
+            configuration.incoming.resolutionResult.allComponents.forEach { component ->
+                println()
+                println("COMPONENT: ${component.id}")
+
+                component.variants.forEach { variant ->
+                    println("  VARIANT: ${variant.displayName}")
+                    println("  ATTRIBUTES: ${variant.attributes}")
+                }
+            }
+        }
+    }
 }

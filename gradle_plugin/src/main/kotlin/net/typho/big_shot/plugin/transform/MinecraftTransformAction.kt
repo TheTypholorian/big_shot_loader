@@ -8,7 +8,9 @@ import org.gradle.api.file.FileSystemLocation
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
+import org.gradle.work.DisableCachingByDefault
 
+@DisableCachingByDefault
 abstract class MinecraftTransformAction : TransformAction<MinecraftTransformAction.Parameters> {
     @get:InputArtifact
     @get:PathSensitive(PathSensitivity.RELATIVE)
