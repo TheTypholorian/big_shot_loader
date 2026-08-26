@@ -30,7 +30,7 @@ object KotlinMixinFixer {
         var changed = false
 
         if (metadata !is KotlinClassMetadata.Class) {
-            println("Kotlin mixin ${node.name} must be a normal class for Big Shot to tweak it, got a ${metadata.javaClass.name}. No action will be taken, if there are problems with the mixin, this is likely a cause.")
+            System.err.println("Kotlin mixin ${node.name} must be a normal class for Big Shot to tweak it, got a ${metadata.javaClass.name}. No action will be taken, if there are problems with the mixin, this is likely a cause.")
             return false
         }
 

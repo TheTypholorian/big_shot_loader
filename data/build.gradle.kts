@@ -12,7 +12,7 @@ repositories {
 
 dependencies {
     testImplementation(kotlin("test"))
-    implementation("net.typho:data_util:1.2.4")
+    implementation("net.typho:data_util:1.2.6")
 }
 
 kotlin {

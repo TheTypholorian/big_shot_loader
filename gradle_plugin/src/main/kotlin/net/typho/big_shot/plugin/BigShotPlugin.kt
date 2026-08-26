@@ -1,18 +1,16 @@
 package net.typho.big_shot.plugin
 
-import net.typho.big_shot.data.TargetMinecraftVersion
 import net.typho.big_shot.plugin.transform.MinecraftTransformAction
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.artifacts.type.ArtifactTypeDefinition
 
 class BigShotPlugin : Plugin<Project> {
-    init {
-        println("new plugin")
-    }
-
     override fun apply(project: Project) {
-        val version = TargetMinecraftVersion["26.2"]
+        val service = project.gradle.sharedServices.registerIfAbsent("BigShot", BigShotBuildService::class.java) {
+            it.parameters.cacheFolder.set(project.gradle.gradleUserHomeDir.resolve("caches").resolve("big_shot"))
+        }
+        val version = service.get().versionManifest.getFamily("26.2")
 
         project.dependencies.registerTransform(MinecraftTransformAction::class.java) {
             it.from.attribute(
