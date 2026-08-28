@@ -11,6 +11,7 @@ import org.eclipse.aether.supplier.RepositorySystemSupplier
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.attributes.Attribute
+import org.gradle.api.plugins.JavaPluginExtension
 import java.net.URI
 import java.nio.file.Files
 import kotlin.io.path.writeBytes
@@ -30,6 +31,10 @@ class BigShotPlugin : Plugin<Project> {
         val service = project.gradle.sharedServices.registerIfAbsent("BigShot", BigShotBuildService::class.java) {
             it.parameters.cacheFolder.set(cacheFolder)
         }
+
+        project.plugins.apply("java")
+        val javaExt = project.extensions.getByType(JavaPluginExtension::class.java)
+        val manifest = javaExt.sourceSets.create("manifest")
 
         project.dependencies.artifactTypes.configureEach { it.attributes.attribute(MINECRAFT_ATTRIBUTE, false) }
         project.dependencies.registerTransform(MinecraftTransformAction::class.java) {
