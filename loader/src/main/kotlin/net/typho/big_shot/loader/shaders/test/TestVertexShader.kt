@@ -4,14 +4,16 @@ import net.typho.big_shot.loader.shaders.reflect.JavaShader
 
 abstract class TestVertexShader : JavaShader.Vertex() {
     @get:Input
-    @get:Location(0)
-    abstract val testInput: Int
+    abstract val testInput: Float
+    @get:Input
+    abstract val testInput2: Float
 
     @set:Output
-    @set:Location(0)
-    abstract var testOutput: Int
+    abstract var testOutput: Float
 
     override fun main() {
-        testOutput = testInput ushr 2
+        var a = testInput
+        a *= testInput2
+        testOutput = -a
     }
 }

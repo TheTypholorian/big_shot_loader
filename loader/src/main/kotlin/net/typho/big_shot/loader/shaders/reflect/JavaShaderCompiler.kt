@@ -6,8 +6,8 @@ import net.typho.asm_util.method.MethodPointer
 import net.typho.big_shot.loader.shaders.bytecode.*
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
-import org.objectweb.asm.tree.AbstractInsnNode
 import org.objectweb.asm.tree.ClassNode
+import org.objectweb.asm.tree.IntInsnNode
 import org.objectweb.asm.tree.LabelNode
 import org.objectweb.asm.tree.LdcInsnNode
 import org.objectweb.asm.tree.LineNumberNode
@@ -110,6 +110,15 @@ object JavaShaderCompiler {
             add(ShaderInsnNode(OP_LABEL, ShaderLabelNode()))
 
             val stack = mutableListOf<ShaderLabelNode?>()
+            val locals = mutableMapOf<Int, ShaderVariable>()
+
+            node.localVariables?.forEach { local ->
+                if (node.access and Opcodes.ACC_STATIC != 0 || local.index != 0) { // "this" should be null in the stack
+                    val variable = ShaderVariable(ShaderBytecodeType.Pointer(STORAGE_CLASS_FUNCTION, convertType(Type.getType(local.desc))), ShaderLabelNode(local.name))
+                    locals[local.index] = variable
+                    add(ShaderInsnNode(OP_VARIABLE, variable.type, variable.label, variable.type.storageClass, variable.initializer))
+                }
+            }
 
             fun const(type: ShaderBytecodeType, value: Any) {
                 stack.add(builder.getConstant(ShaderConstant(type, value)))
@@ -142,15 +151,27 @@ object JavaShaderCompiler {
                     is LabelNode, is LineNumberNode -> continue
                     is VarInsnNode -> {
                         when (insn.opcode) {
-                            Opcodes.ALOAD -> {
-                                if (insn.`var` != 0) {
-                                    TODO("non-0 aload")
-                                }
+                            Opcodes.ILOAD, Opcodes.LLOAD, Opcodes.FLOAD, Opcodes.DLOAD, Opcodes.ALOAD -> {
+                                val local = locals[insn.`var`]
 
-                                stack.add(null)
-                                continue
+                                if (local == null) {
+                                    stack.add(null)
+                                } else {
+                                    val label = ShaderLabelNode()
+                                    stack.add(label)
+                                    add(ShaderInsnNode(OP_LOAD, local.type.type, label, local.label))
+                                }
                             }
+                            Opcodes.ISTORE, Opcodes.LSTORE, Opcodes.FSTORE, Opcodes.DSTORE, Opcodes.ASTORE -> {
+                                val value = stack.removeLast()!!
+                                val local = locals[insn.`var`]!!
+
+                                add(ShaderInsnNode(OP_STORE, local.label, value))
+                            }
+                            else -> TODO()
                         }
+
+                        continue
                     }
                     is MethodInsnNode -> {
                         when (insn.opcode) {
@@ -204,8 +225,15 @@ object JavaShaderCompiler {
                         }
                         continue
                     }
+                    is IntInsnNode -> {
+                        when (insn.opcode) {
+                            Opcodes.BIPUSH, Opcodes.SIPUSH -> const(ShaderBytecodeType.Integer.JAVA, insn.operand)
+                        }
+                    }
                     else -> {
                         when (insn.opcode) {
+                            Opcodes.NOP -> add(ShaderInsnNode(OP_NO_OP))
+
                             Opcodes.ICONST_0 -> const(ShaderBytecodeType.Integer.JAVA, 0)
                             Opcodes.ICONST_1 -> const(ShaderBytecodeType.Integer.JAVA, 1)
                             Opcodes.ICONST_2 -> const(ShaderBytecodeType.Integer.JAVA, 2)
@@ -222,6 +250,14 @@ object JavaShaderCompiler {
 
                             Opcodes.DCONST_0 -> const(ShaderBytecodeType.Float.DOUBLE, 0.0)
                             Opcodes.DCONST_1 -> const(ShaderBytecodeType.Float.DOUBLE, 1.0)
+
+                            Opcodes.POP -> stack.removeLast()
+                            Opcodes.POP2 -> {
+                                stack.removeLast()
+                                stack.removeLast()
+                            }
+                            Opcodes.DUP -> stack.addLast(stack.last())
+                            Opcodes.DUP_X1, Opcodes.DUP_X2, Opcodes.DUP2, Opcodes.DUP2_X1, Opcodes.DUP2_X2 -> TODO("DUP opcode ${insn.opcode}")
 
                             Opcodes.I2L -> cast(OP_S_CONVERT, ShaderBytecodeType.Integer.LONG)
                             Opcodes.I2F -> cast(OP_CONVERT_S_TO_F, ShaderBytecodeType.Float.JAVA)
