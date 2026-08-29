@@ -10,7 +10,7 @@ data class ShaderInsnNode(
     @JvmField
     val values: List<Any>
 ) {
-    constructor(opcode: Int, vararg values: Any) : this(opcode, values.asList())
+    constructor(opcode: Int, vararg values: Any?) : this(opcode, values.filterNotNull())
 
     val words by lazy {
         val words = values.sumOf { value ->
@@ -18,7 +18,7 @@ data class ShaderInsnNode(
                 is Int, is ShaderLabelNode -> 1
                 is Float -> 1
                 is Double -> 2
-                is CharSequence -> (value.length + 3) / 4 // round up to nearest word
+                is CharSequence -> (value.length + 4) / 4 // round up to nearest word plus padding
                 else -> throw IllegalArgumentException("Illegal ShaderInsnNode value $value (${value.javaClass})")
             }
         } + 1 // include the header word
@@ -56,12 +56,6 @@ data class ShaderInsnNode(
             }
         }
 
-        values.forEachIndexed { index, value ->
-            if (value is CharSequence && index < values.size - 1) {
-                throw IllegalArgumentException("ShaderInsnNode values of type CharSequence must be the last value in the list")
-            }
-        }
-
         val buffer = buffer.putInt((words shl 16) or opcode)
 
         for (value in values) {
@@ -78,7 +72,7 @@ data class ShaderInsnNode(
                         buffer.put(it.code.toByte())
                     }
 
-                    buffer.position(buffer.position() + ((value.length + 3) / 4) * 4 - value.length) // align to word
+                    buffer.position(buffer.position() + ((value.length + 4) / 4) * 4 - value.length) // align to word
                 }
             }
         }

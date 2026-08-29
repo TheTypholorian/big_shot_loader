@@ -1,10 +1,11 @@
 package net.typho.big_shot.loader.shaders.bytecode
 
-class ShaderFunction(
+class ShaderFunction @JvmOverloads constructor(
     @JvmField
     val type: ShaderBytecodeType.Function,
-    name: String? = null
-) : ShaderLabelNode(name) {
+    @JvmField
+    val label: ShaderLabelNode = ShaderLabelNode()
+) {
     @JvmField
     var controlMask = 0
     @JvmField

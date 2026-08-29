@@ -5,13 +5,17 @@ sealed interface ShaderBytecodeType {
 
     fun createInsn(result: ShaderLabelNode): ShaderInsnNode
 
+    fun register(builder: ShaderBytecodeBuilder) {
+        builder.types.computeIfAbsent(this) { createLabelNode() }
+    }
+
     object Void : ShaderBytecodeType {
         override fun createInsn(result: ShaderLabelNode): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_VOID, result)
         }
 
         override fun toString(): String {
-            return "Void"
+            return "void"
         }
     }
 
@@ -21,27 +25,60 @@ sealed interface ShaderBytecodeType {
         }
 
         override fun toString(): String {
-            return "Bool"
+            return "boolean"
         }
     }
 
-    object Integer : ShaderBytecodeType {
+    data class Integer(
+        @JvmField
+        val width: Int,
+        @JvmField
+        val signed: Boolean
+    ) : ShaderBytecodeType {
+        companion object {
+            @JvmField
+            val BYTE = Integer(8, true)
+            @JvmField
+            val SHORT = Integer(16, true)
+            @JvmField
+            val JAVA = Integer(32, true)
+            @JvmField
+            val LONG = Integer(64, true)
+        }
+
         override fun createInsn(result: ShaderLabelNode): ShaderInsnNode {
-            return ShaderInsnNode(OP_TYPE_INT, result)
+            return ShaderInsnNode(OP_TYPE_INT, result, width, if (signed) 1 else 0)
         }
 
         override fun toString(): String {
-            return "Integer"
+            return buildString {
+                if (!signed) {
+                    append('s')
+                }
+
+                append("int")
+                append(width)
+            }
         }
     }
 
-    object Float : ShaderBytecodeType {
+    data class Float(
+        @JvmField
+        val width: Int
+    ) : ShaderBytecodeType {
+        companion object {
+            @JvmField
+            val JAVA = Float(32)
+            @JvmField
+            val DOUBLE = Float(64)
+        }
+
         override fun createInsn(result: ShaderLabelNode): ShaderInsnNode {
-            return ShaderInsnNode(OP_TYPE_FLOAT, result)
+            return ShaderInsnNode(OP_TYPE_FLOAT, result, width)
         }
 
         override fun toString(): String {
-            return "Float"
+            return "float$width"
         }
     }
 
@@ -58,6 +95,11 @@ sealed interface ShaderBytecodeType {
         override fun toString(): String {
             return "Vec$componentCount$componentType"
         }
+
+        override fun register(builder: ShaderBytecodeBuilder) {
+            super.register(builder)
+            componentType.register(builder)
+        }
     }
 
     data class Matrix(
@@ -72,6 +114,11 @@ sealed interface ShaderBytecodeType {
 
         override fun toString(): String {
             return "Mat$columnCount$columnType"
+        }
+
+        override fun register(builder: ShaderBytecodeBuilder) {
+            super.register(builder)
+            columnType.register(builder)
         }
     }
 
@@ -88,7 +135,33 @@ sealed interface ShaderBytecodeType {
         override fun toString(): String {
             return "$returnType(${parameterTypes.joinToString()})"
         }
+
+        override fun register(builder: ShaderBytecodeBuilder) {
+            super.register(builder)
+            returnType.register(builder)
+            parameterTypes.forEach { it.register(builder) }
+        }
     }
 
-    // TODO image, sampler, sampled image, array, runtime array, struct, opaque, pointer
+    data class Pointer(
+        @JvmField
+        val storageClass: Int,
+        @JvmField
+        val type: ShaderBytecodeType
+    ) : ShaderBytecodeType {
+        override fun createInsn(result: ShaderLabelNode): ShaderInsnNode {
+            return ShaderInsnNode(OP_TYPE_POINTER, result, storageClass, type)
+        }
+
+        override fun toString(): String {
+            return "Pointer$storageClass$type"
+        }
+
+        override fun register(builder: ShaderBytecodeBuilder) {
+            super.register(builder)
+            type.register(builder)
+        }
+    }
+
+    // TODO image, sampler, sampled image, array, runtime array, struct, opaque
 }

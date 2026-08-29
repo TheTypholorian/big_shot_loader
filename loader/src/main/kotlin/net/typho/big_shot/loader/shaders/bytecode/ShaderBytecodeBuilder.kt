@@ -19,6 +19,8 @@ class ShaderBytecodeBuilder(
     @JvmField
     val capabilities = mutableSetOf<Int>()
     @JvmField
+    val variables = mutableListOf<ShaderVariable>()
+    @JvmField
     val functions = mutableListOf<ShaderFunction>()
 
     fun getType(type: ShaderBytecodeType) = types.computeIfAbsent(type) { it.createLabelNode() }
@@ -43,21 +45,33 @@ class ShaderBytecodeBuilder(
         }
 
         ShaderInsnNode(OP_MEMORY_MODEL, ADDRESS_MODE_LOGICAL, MEMORY_MODEL_GLSL_450).flatten(this).get(header)
-        ShaderInsnNode(OP_ENTRY_POINT, execModel, entrypoint, entrypoint.name ?: "main" /* TODO inputs and outputs */).flatten(this).get(header)
+        ShaderInsnNode(OP_ENTRY_POINT, execModel, entrypoint.label, entrypoint.label.name ?: "main", variables.map { it.label }).flatten(this).get(header)
 
         val annotations = ExpandingByteBuffer(256)
         val types = ExpandingByteBuffer(512)
         val body = ExpandingByteBuffer(4096)
 
+        for (variable in variables) {
+            variable.location?.let {
+                ShaderInsnNode(OP_DECORATE, variable.label, 30, it).flatten(this).get(annotations) // location
+            }
+        }
+
         for (func in functions) {
-            ShaderInsnNode(OP_FUNCTION, func.type.returnType, func, func.controlMask, func.type).flatten(this).get(body)
+            ShaderInsnNode(OP_FUNCTION, func.type.returnType, func.label, func.controlMask, func.type).flatten(this).get(body)
             func.instructions.forEach { it.flatten(this).get(body) }
             ShaderInsnNode(OP_FUNCTION_END).get(body)
         }
 
+        val varDefs = variables.map { variable -> ShaderInsnNode(OP_VARIABLE, variable.type, variable.label, variable.type.storageClass, variable.initializer).flatten(this) }
+
+        this.types.keys.toList().forEach { it.register(this) }
+
         for ((type, label) in this.types) {
             type.createInsn(label).flatten(this).get(types)
         }
+
+        varDefs.forEach { it.get(types) }
 
         labels.addAll(this.types.values)
         val labelNameInsns = labels.mapNotNull { it.getNameInsn(this)?.flatten(this) }
