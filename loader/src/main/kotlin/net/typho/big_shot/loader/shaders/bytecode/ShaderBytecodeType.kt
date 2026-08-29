@@ -143,6 +143,37 @@ sealed interface ShaderBytecodeType {
         }
     }
 
+    // TODO arrays
+    /*
+    data class Array(
+        @JvmField
+        val elementType: ShaderBytecodeType,
+        @JvmField
+        var length: Int?
+    ) : ShaderBytecodeType {
+        override fun createInsn(result: ShaderLabelNode): ShaderInsnNode {
+            return length?.let { ShaderInsnNode(OP_TYPE_ARRAY, result, elementType, it) } ?: ShaderInsnNode(OP_TYPE_RUNTIME_ARRAY, result, elementType)
+        }
+
+        override fun toString(): String {
+            return length?.let { "$elementType[$it]" } ?: "$elementType[]"
+        }
+
+        override fun register(builder: ShaderBytecodeBuilder) {
+            super.register(builder)
+            elementType.register(builder)
+        }
+
+        override fun equals(other: Any?): Boolean {
+            return this === other // since length is mutable, disable type recycling for arrays
+        }
+
+        override fun hashCode(): Int {
+            return elementType.hashCode()
+        }
+    }
+     */
+
     data class Pointer(
         @JvmField
         val storageClass: Int,
@@ -163,5 +194,5 @@ sealed interface ShaderBytecodeType {
         }
     }
 
-    // TODO image, sampler, sampled image, array, runtime array, struct, opaque
+    // TODO image, sampler, sampled image, struct, opaque
 }

@@ -7,13 +7,17 @@ abstract class TestVertexShader : JavaShader.Vertex() {
     abstract val testInput: Float
     @get:Input
     abstract val testInput2: Float
+    @get:Input
+    abstract val testInput3: Long
 
     @set:Output
     abstract var testOutput: Float
 
     override fun main() {
-        var a = testInput
-        a *= testInput2
-        testOutput = -a
+        if (testInput3 >= 4L) {
+            testOutput += 1
+        } else {
+            testOutput -= 1
+        }
     }
 }

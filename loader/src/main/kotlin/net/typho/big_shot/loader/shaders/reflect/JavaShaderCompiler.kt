@@ -34,6 +34,7 @@ object JavaShaderCompiler {
             Type.FLOAT -> ShaderBytecodeType.Float.JAVA
             Type.DOUBLE -> ShaderBytecodeType.Float.DOUBLE
 
+            //Type.ARRAY -> ShaderBytecodeType.Array(convertType(type.elementType), null)
             Type.METHOD -> ShaderBytecodeType.Function(convertType(type.returnType), type.argumentTypes.map { convertType(it) })
             // TODO other types
 
@@ -262,7 +263,17 @@ object JavaShaderCompiler {
                             Opcodes.I2L -> cast(OP_S_CONVERT, ShaderBytecodeType.Integer.LONG)
                             Opcodes.I2F -> cast(OP_CONVERT_S_TO_F, ShaderBytecodeType.Float.JAVA)
                             Opcodes.I2D -> cast(OP_CONVERT_S_TO_F, ShaderBytecodeType.Float.DOUBLE)
-                            // TODO rest of conversion opcodes
+                            Opcodes.L2I -> cast(OP_S_CONVERT, ShaderBytecodeType.Integer.JAVA)
+                            Opcodes.L2F -> cast(OP_CONVERT_S_TO_F, ShaderBytecodeType.Float.JAVA)
+                            Opcodes.L2D -> cast(OP_CONVERT_S_TO_F, ShaderBytecodeType.Float.DOUBLE)
+                            Opcodes.F2I -> cast(OP_CONVERT_F_TO_S, ShaderBytecodeType.Integer.JAVA)
+                            Opcodes.F2L -> cast(OP_CONVERT_F_TO_S, ShaderBytecodeType.Integer.LONG)
+                            Opcodes.F2D -> cast(OP_F_CONVERT, ShaderBytecodeType.Float.DOUBLE)
+                            Opcodes.D2I -> cast(OP_CONVERT_F_TO_S, ShaderBytecodeType.Integer.JAVA)
+                            Opcodes.D2L -> cast(OP_CONVERT_F_TO_S, ShaderBytecodeType.Integer.LONG)
+                            Opcodes.D2F -> cast(OP_F_CONVERT, ShaderBytecodeType.Float.JAVA)
+                            Opcodes.I2B -> cast(OP_S_CONVERT, ShaderBytecodeType.Integer.BYTE)
+                            Opcodes.I2C, Opcodes.I2S -> cast(OP_S_CONVERT, ShaderBytecodeType.Integer.SHORT)
 
                             Opcodes.IADD -> math(OP_I_ADD, ShaderBytecodeType.Integer.JAVA)
                             Opcodes.LADD -> math(OP_I_ADD, ShaderBytecodeType.Integer.LONG)
