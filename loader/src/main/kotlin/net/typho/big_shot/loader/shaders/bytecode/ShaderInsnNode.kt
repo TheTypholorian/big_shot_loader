@@ -15,9 +15,8 @@ data class ShaderInsnNode(
     val words by lazy {
         val words = values.sumOf { value ->
             when (value) {
-                is Int, is ShaderLabelNode -> 1
-                is Float -> 1
-                is Double -> 2
+                is Byte, is Short, is Int, is ShaderLabelNode, is Float -> 1
+                is Long, is Double -> 2
                 is CharSequence -> (value.length + 4) / 4 // round up to nearest word plus padding
                 else -> throw IllegalArgumentException("Illegal ShaderInsnNode value $value (${value.javaClass})")
             }
@@ -60,7 +59,9 @@ data class ShaderInsnNode(
 
         for (value in values) {
             when (value) {
+                is Byte, is Short -> buffer.putInt(value.toInt())
                 is Int -> buffer.putInt(value)
+                is Long -> buffer.putLong(value)
                 is Float -> buffer.putFloat(value)
                 is Double -> buffer.putDouble(value)
                 is CharSequence -> {
@@ -74,6 +75,7 @@ data class ShaderInsnNode(
 
                     buffer.position(buffer.position() + ((value.length + 4) / 4) * 4 - value.length) // align to word
                 }
+                else -> throw AssertionError()
             }
         }
     }
