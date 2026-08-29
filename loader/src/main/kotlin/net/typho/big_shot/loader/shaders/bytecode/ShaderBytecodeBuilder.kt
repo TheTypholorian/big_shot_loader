@@ -15,6 +15,8 @@ class ShaderBytecodeBuilder(
     val imports = linkedMapOf<String, ShaderLabelNode>()
     @JvmField
     val types = linkedMapOf<ShaderBytecodeType, ShaderLabelNode>()
+    @JvmField
+    val constants = linkedMapOf<ShaderConstant, ShaderLabelNode>()
 
     @JvmField
     val capabilities = mutableSetOf<Int>()
@@ -24,6 +26,8 @@ class ShaderBytecodeBuilder(
     val functions = mutableListOf<ShaderFunction>()
 
     fun getType(type: ShaderBytecodeType) = types.computeIfAbsent(type) { it.createLabelNode() }
+
+    fun getConstant(const: ShaderConstant) = constants.computeIfAbsent(const) { it.createLabelNode() }
 
     fun import(name: String) = imports.computeIfAbsent(name) { ShaderLabelNode(name) }
 
@@ -65,10 +69,15 @@ class ShaderBytecodeBuilder(
 
         val varDefs = variables.map { variable -> ShaderInsnNode(OP_VARIABLE, variable.type, variable.label, variable.type.storageClass, variable.initializer).flatten(this) }
 
+        constants.keys.forEach { it.type.register(this) }
         this.types.keys.toList().forEach { it.register(this) }
 
         for ((type, label) in this.types) {
             type.createInsn(label).flatten(this).get(types)
+        }
+
+        for ((const, label) in constants) {
+            const.createInsn(label).flatten(this).get(types)
         }
 
         varDefs.forEach { it.get(types) }
