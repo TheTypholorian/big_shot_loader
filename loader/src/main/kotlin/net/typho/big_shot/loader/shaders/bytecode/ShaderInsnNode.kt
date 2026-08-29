@@ -42,17 +42,23 @@ data class ShaderInsnNode(
         })
     }
 
-    fun get(buffer: ExpandingByteBuffer) {
-        get(buffer.expand(words * 4))
+    @JvmOverloads
+    fun get(buffer: ExpandingByteBuffer, debug: Boolean = false) {
+        get(buffer.expand(words * 4), debug)
     }
 
-    fun get(buffer: ByteBuffer) {
+    @JvmOverloads
+    fun get(buffer: ByteBuffer, debug: Boolean = false) {
         val values = values.map { value ->
             when (value) {
                 is Supplier<*> -> value.get()!!
                 is Function0<*> -> value()!!
                 else -> value
             }
+        }
+
+        if (debug) {
+            println("Instruction $opcode $values")
         }
 
         val buffer = buffer.putInt((words shl 16) or opcode)

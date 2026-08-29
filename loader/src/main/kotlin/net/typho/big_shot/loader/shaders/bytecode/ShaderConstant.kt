@@ -15,22 +15,18 @@ data class ShaderConstant(
     fun cast(to: ShaderBytecodeType): ShaderConstant? {
         return when (to) {
             is ShaderBytecodeType.Integer -> {
-                val v = value.first() as Number
-
                 when (to) {
-                    ShaderBytecodeType.Integer.BYTE -> ShaderConstant(to, v.toByte())
-                    ShaderBytecodeType.Integer.SHORT -> ShaderConstant(to, v.toShort())
-                    ShaderBytecodeType.Integer.JAVA -> ShaderConstant(to, v.toInt())
-                    ShaderBytecodeType.Integer.LONG -> ShaderConstant(to, v.toLong())
+                    ShaderBytecodeType.Integer.BYTE -> ShaderConstant(to, (value.first() as Number).toByte())
+                    ShaderBytecodeType.Integer.SHORT -> ShaderConstant(to, (value.first() as Number).toShort())
+                    ShaderBytecodeType.Integer.JAVA -> ShaderConstant(to, (value.first() as Number).toInt())
+                    ShaderBytecodeType.Integer.LONG -> ShaderConstant(to, (value.first() as Number).toLong())
                     else -> null
                 }
             }
             is ShaderBytecodeType.Float -> {
-                val v = value.first() as Number
-
                 when (to) {
-                    ShaderBytecodeType.Float.JAVA -> ShaderConstant(to, v.toFloat())
-                    ShaderBytecodeType.Float.DOUBLE -> ShaderConstant(to, v.toDouble())
+                    ShaderBytecodeType.Float.JAVA -> ShaderConstant(to, (value.first() as Number).toFloat())
+                    ShaderBytecodeType.Float.DOUBLE -> ShaderConstant(to, (value.first() as Number).toDouble())
                     else -> null
                 }
             }
@@ -39,6 +35,6 @@ data class ShaderConstant(
     }
 
     override fun toString(): String {
-        return "$value($type)"
+        return if (value.size == 1) "${value.first()}($type)" else "$value($type)"
     }
 }

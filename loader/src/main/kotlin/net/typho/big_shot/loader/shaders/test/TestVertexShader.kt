@@ -4,33 +4,16 @@ import net.typho.big_shot.loader.shaders.reflect.JavaShader
 
 abstract class TestVertexShader : JavaShader.Vertex() {
     @get:Input
-    abstract val testInput: Float
+    abstract val a: Int
     @get:Input
-    abstract val testInput2: Float
-    @get:Input
-    abstract val testInput3: Float
+    abstract val b: Int
 
     @set:Output
-    abstract var testOutput: Float
+    abstract var output: Int
 
     override fun main() {
-        var a = testInput
-        a *= testInput2
-        a += testInput3 * 30
-        testOutput = -a
-    }
-
-    companion object {
-        @JvmStatic
-        fun main(args: Array<String>) {
-            val test = object : TestVertexShader() {
-                override val testInput: Float = 2f
-                override val testInput2: Float = 4f
-                override val testInput3: Float = 3f
-                override var testOutput: Float = 0f
-            }
-            test.main()
-            println(test.testOutput)
-        }
+        val arr = IntArray(30)
+        arr[a] = b
+        output = arr[a]
     }
 }

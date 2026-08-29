@@ -1,16 +1,19 @@
 package net.typho.big_shot.loader.shaders.bytecode
 
 sealed interface ShaderBytecodeType {
+    val rootType: ShaderBytecodeType
+        get() = this
+
     fun createLabelNode(): ShaderLabelNode = ShaderLabelNode(toString())
 
-    fun createInsn(result: ShaderLabelNode): ShaderInsnNode
+    fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode
 
     fun register(builder: ShaderBytecodeBuilder) {
         builder.types.computeIfAbsent(this) { createLabelNode() }
     }
 
     object Void : ShaderBytecodeType {
-        override fun createInsn(result: ShaderLabelNode): ShaderInsnNode {
+        override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_VOID, result)
         }
 
@@ -20,7 +23,7 @@ sealed interface ShaderBytecodeType {
     }
 
     object Bool : ShaderBytecodeType {
-        override fun createInsn(result: ShaderLabelNode): ShaderInsnNode {
+        override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_BOOL, result)
         }
 
@@ -46,7 +49,7 @@ sealed interface ShaderBytecodeType {
             val LONG = Integer(64, true)
         }
 
-        override fun createInsn(result: ShaderLabelNode): ShaderInsnNode {
+        override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_INT, result, width, if (signed) 1 else 0)
         }
 
@@ -73,7 +76,7 @@ sealed interface ShaderBytecodeType {
             val DOUBLE = Float(64)
         }
 
-        override fun createInsn(result: ShaderLabelNode): ShaderInsnNode {
+        override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_FLOAT, result, width)
         }
 
@@ -88,7 +91,7 @@ sealed interface ShaderBytecodeType {
         @JvmField
         val componentCount: Int
     ) : ShaderBytecodeType {
-        override fun createInsn(result: ShaderLabelNode): ShaderInsnNode {
+        override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_VECTOR, result, componentType, componentCount)
         }
 
@@ -108,7 +111,7 @@ sealed interface ShaderBytecodeType {
         @JvmField
         val columnCount: Int
     ) : ShaderBytecodeType {
-        override fun createInsn(result: ShaderLabelNode): ShaderInsnNode {
+        override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_MATRIX, result, columnType, columnCount)
         }
 
@@ -128,7 +131,7 @@ sealed interface ShaderBytecodeType {
         @JvmField
         val parameterTypes: List<ShaderBytecodeType>
     ) : ShaderBytecodeType {
-        override fun createInsn(result: ShaderLabelNode): ShaderInsnNode {
+        override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_FUNCTION, result, returnType, parameterTypes)
         }
 
@@ -143,16 +146,17 @@ sealed interface ShaderBytecodeType {
         }
     }
 
-    // TODO arrays
-    /*
     data class Array(
         @JvmField
         val elementType: ShaderBytecodeType,
         @JvmField
-        var length: Int?
+        val length: Int?
     ) : ShaderBytecodeType {
-        override fun createInsn(result: ShaderLabelNode): ShaderInsnNode {
-            return length?.let { ShaderInsnNode(OP_TYPE_ARRAY, result, elementType, it) } ?: ShaderInsnNode(OP_TYPE_RUNTIME_ARRAY, result, elementType)
+        override val rootType: ShaderBytecodeType
+            get() = elementType.rootType
+
+        override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
+            return length?.let { ShaderInsnNode(OP_TYPE_ARRAY, result, elementType, builder.getConstant(ShaderConstant(Integer.JAVA, it))) } ?: ShaderInsnNode(OP_TYPE_RUNTIME_ARRAY, result, elementType)
         }
 
         override fun toString(): String {
@@ -163,16 +167,7 @@ sealed interface ShaderBytecodeType {
             super.register(builder)
             elementType.register(builder)
         }
-
-        override fun equals(other: Any?): Boolean {
-            return this === other // since length is mutable, disable type recycling for arrays
-        }
-
-        override fun hashCode(): Int {
-            return elementType.hashCode()
-        }
     }
-     */
 
     data class Pointer(
         @JvmField
@@ -180,7 +175,7 @@ sealed interface ShaderBytecodeType {
         @JvmField
         val type: ShaderBytecodeType
     ) : ShaderBytecodeType {
-        override fun createInsn(result: ShaderLabelNode): ShaderInsnNode {
+        override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_POINTER, result, storageClass, type)
         }
 

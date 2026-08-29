@@ -61,10 +61,12 @@ class ShaderBytecodeBuilder(
             }
         }
 
+        println("body")
+
         for (func in functions) {
-            ShaderInsnNode(OP_FUNCTION, func.type.returnType, func.label, func.controlMask, func.type).flatten(this).get(body)
-            func.instructions.forEach { it.flatten(this).get(body) }
-            ShaderInsnNode(OP_FUNCTION_END).get(body)
+            ShaderInsnNode(OP_FUNCTION, func.type.returnType, func.label, func.controlMask, func.type).flatten(this).get(body, true)
+            func.instructions.forEach { it.flatten(this).get(body, true) }
+            ShaderInsnNode(OP_FUNCTION_END).get(body, true)
         }
 
         val varDefs = variables.map { variable -> ShaderInsnNode(OP_VARIABLE, variable.type, variable.label, variable.type.storageClass, variable.initializer).flatten(this) }
@@ -72,15 +74,17 @@ class ShaderBytecodeBuilder(
         constants.keys.forEach { it.type.register(this) }
         this.types.keys.toList().forEach { it.register(this) }
 
+        println("types")
+
         for ((type, label) in this.types) {
-            type.createInsn(label).flatten(this).get(types)
+            type.createInsn(label, this).flatten(this).get(types, true)
         }
 
         for ((const, label) in constants) {
-            const.createInsn(label).flatten(this).get(types)
+            const.createInsn(label).flatten(this).get(types, true)
         }
 
-        varDefs.forEach { it.get(types) }
+        varDefs.forEach { it.get(types, true) }
 
         labels.addAll(this.types.values)
         val labelNameInsns = labels.mapNotNull { it.getNameInsn(this)?.flatten(this) }
