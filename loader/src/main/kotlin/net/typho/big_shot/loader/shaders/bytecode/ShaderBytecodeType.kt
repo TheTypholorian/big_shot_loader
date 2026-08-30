@@ -1,6 +1,59 @@
 package net.typho.big_shot.loader.shaders.bytecode
 
+import org.objectweb.asm.Type
+
 sealed interface ShaderBytecodeType {
+    companion object {
+        @JvmStatic
+        fun convertJavaType(type: Type): ShaderBytecodeType {
+            if (type.sort == Type.METHOD) {
+                throw IllegalArgumentException()
+            }
+
+            return when (type.sort) {
+                Type.VOID -> Void
+                Type.BOOLEAN -> Bool
+
+                Type.BYTE -> Integer.BYTE
+                Type.SHORT -> Integer.SHORT
+                Type.INT -> Integer.JAVA
+                Type.LONG -> Integer.LONG
+
+                Type.FLOAT -> Float.JAVA
+                Type.DOUBLE -> Float.DOUBLE
+
+                Type.OBJECT -> when (type.internalName) {
+                    "java/lang/Void", "kotlin/Unit" -> Void
+                    "java/lang/Boolean" -> Bool
+
+                    "java/lang/Byte" -> Integer.BYTE
+                    "java/lang/Short" -> Integer.SHORT
+                    "java/lang/Integer" -> Integer.JAVA
+                    "java/lang/Long" -> Integer.LONG
+
+                    "java/lang/Float" -> Float.JAVA
+                    "java/lang/Double" -> Float.DOUBLE
+                    else -> throw IllegalArgumentException("Cannot convert type $type to spir-v")
+                }
+
+                Type.ARRAY -> Array(convertJavaType(type.elementType), null)
+                Type.METHOD -> Function(convertJavaType(type.returnType), type.argumentTypes.map { convertJavaType(it) })
+                // TODO other types
+
+                else -> throw IllegalArgumentException("Cannot convert type $type to spir-v")
+            }
+        }
+
+        @JvmStatic
+        fun convertJavaMethodType(type: Type): List<ShaderBytecodeType> {
+            if (type.sort != Type.METHOD) {
+                throw IllegalArgumentException()
+            }
+
+            return type.argumentTypes.mapTo(mutableListOf(convertJavaType(type.returnType))) { convertJavaType(it) }
+        }
+    }
+
     val rootType: ShaderBytecodeType
         get() = this
 

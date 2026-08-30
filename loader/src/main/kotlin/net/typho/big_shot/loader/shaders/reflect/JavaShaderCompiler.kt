@@ -6,6 +6,8 @@ import net.typho.asm_util.method.MethodPointer
 import net.typho.big_shot.loader.shaders.bytecode.*
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
+import org.objectweb.asm.signature.SignatureReader
+import org.objectweb.asm.signature.SignatureVisitor
 import org.objectweb.asm.tree.*
 import java.nio.ByteBuffer
 import kotlin.metadata.jvm.KotlinClassMetadata
@@ -13,28 +15,6 @@ import kotlin.metadata.jvm.getterSignature
 import kotlin.metadata.jvm.setterSignature
 
 object JavaShaderCompiler {
-    @JvmStatic
-    fun convertType(type: Type): ShaderBytecodeType {
-        return when (type.sort) {
-            Type.VOID -> ShaderBytecodeType.Void
-            Type.BOOLEAN -> ShaderBytecodeType.Bool
-
-            Type.BYTE -> ShaderBytecodeType.Integer.BYTE
-            Type.SHORT -> ShaderBytecodeType.Integer.SHORT
-            Type.INT -> ShaderBytecodeType.Integer.JAVA
-            Type.LONG -> ShaderBytecodeType.Integer.LONG
-
-            Type.FLOAT -> ShaderBytecodeType.Float.JAVA
-            Type.DOUBLE -> ShaderBytecodeType.Float.DOUBLE
-
-            Type.ARRAY -> ShaderBytecodeType.Array(convertType(type.elementType), null)
-            Type.METHOD -> ShaderBytecodeType.Function(convertType(type.returnType), type.argumentTypes.map { convertType(it) })
-            // TODO other types
-
-            else -> throw IllegalArgumentException("Cannot convert type $type to spir-v")
-        }
-    }
-
     data class MethodName(
         @JvmField
         val owner: String,
@@ -119,12 +99,12 @@ object JavaShaderCompiler {
         storageClass ?: return null
         type ?: return null
 
-        return ShaderVariable(ShaderBytecodeType.Pointer(storageClass, convertType(type)), label = ShaderLabelNode(name), location = location)
+        return ShaderVariable(ShaderBytecodeType.Pointer(storageClass, ShaderBytecodeType.convertJavaType(type)), label = ShaderLabelNode(name), location = location)
     }
 
     @JvmStatic
     fun compile(node: MethodNode, variables: Map<MethodName, ShaderVariable>, builder: ShaderBytecodeBuilder): ShaderFunction {
-        val func = ShaderFunction(convertType(Type.getMethodType(node.desc)) as ShaderBytecodeType.Function, label = ShaderLabelNode(node.name))
+        val func = ShaderFunction(ShaderBytecodeType.convertJavaType(Type.getMethodType(node.desc)) as ShaderBytecodeType.Function, label = ShaderLabelNode(node.name))
 
         func.instructions.apply {
             add(ShaderInsnNode(OP_LABEL, ShaderLabelNode()))
@@ -134,7 +114,7 @@ object JavaShaderCompiler {
 
             node.localVariables?.forEach { local ->
                 if (node.access and Opcodes.ACC_STATIC != 0 || local.index != 0) { // "this" should be null in the stack
-                    val type = convertType(Type.getType(local.desc))
+                    val type = ShaderBytecodeType.convertJavaType(Type.getType(local.signature ?: local.desc))
 
                     if (type !is ShaderBytecodeType.Array) { // arrays are defined later
                         val variable = ShaderVariable(ShaderBytecodeType.Pointer(STORAGE_CLASS_FUNCTION, type), ShaderLabelNode(local.name))

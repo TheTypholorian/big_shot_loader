@@ -1,8 +1,12 @@
 package net.typho.big_shot.loader.shaders.test
 
+import net.typho.big_shot.loader.shaders.bytecode.ShaderBytecodeType
 import net.typho.big_shot.loader.shaders.bytecode.ShaderBytecodeUtils
 import net.typho.big_shot.loader.shaders.reflect.JavaShaderCompiler
 import org.objectweb.asm.ClassReader
+import org.objectweb.asm.Opcodes
+import org.objectweb.asm.Type
+import org.objectweb.asm.signature.SignatureReader
 import org.objectweb.asm.tree.ClassNode
 import java.io.File
 
