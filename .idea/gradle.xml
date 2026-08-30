@@ -23,6 +23,7 @@
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/agent" />
             <option value="$PROJECT_DIR$/data" />
+            <option value="$PROJECT_DIR$/decompiler" />
             <option value="$PROJECT_DIR$/gradle_plugin" />
             <option value="$PROJECT_DIR$/installer" />
             <option value="$PROJECT_DIR$/loader" />
