@@ -1,22 +1,21 @@
 package net.typho.big_shot.loader.shaders.test
 
-import net.typho.big_shot.loader.math.IVec3
-import net.typho.big_shot.loader.math.IVec4
 import net.typho.big_shot.loader.shaders.reflect.JavaShader
+import org.joml.Vector3f
+import org.joml.Vector3fc
 
 abstract class TestVertexShader : JavaShader.Vertex() {
     @get:Input
-    abstract val pos: IVec3<Float>
-    @get:Input
-    abstract val color: IVec4<Int>
+    @get:Location(0)
+    abstract val pos: Vector3fc
 
     @set:Output
-    abstract var outPos: IVec3<Float>
-    @set:Output
-    abstract var outColor: IVec4<Float>
+    @set:Location(0)
+    abstract var outPos: Vector3fc
 
     override fun main() {
-        outPos = pos
-        //outColor = color.toFloat() / 255f
+        val temp = Vector3f()
+        pos.add(1f, 0.5f, 0.25f, temp)
+        outPos = temp
     }
 }

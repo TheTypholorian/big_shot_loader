@@ -36,7 +36,7 @@ data class ShaderInsnNode(
                 is Supplier<*> -> value.get()!!
                 is Function0<*> -> value()!!
                 is ShaderLabelNode -> value.getId(builder)
-                is ShaderBytecodeType -> builder!!.getType(value).getId(builder)
+                is ShaderBytecodeType -> value.getLabel(builder!!).getId(builder)
                 else -> value
             }!!
         })

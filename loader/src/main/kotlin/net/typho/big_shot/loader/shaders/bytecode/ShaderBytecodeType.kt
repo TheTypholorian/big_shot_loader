@@ -4,35 +4,84 @@ import org.objectweb.asm.Type
 
 sealed interface ShaderBytecodeType {
     companion object {
+        @JvmField
+        val BYTE = Integer(8, true)
+        @JvmField
+        val SHORT = Integer(16, true)
+        @JvmField
+        val INT = Integer(32, true)
+        @JvmField
+        val LONG = Integer(64, true)
+        @JvmField
+        val FLOAT = Float(32)
+        @JvmField
+        val DOUBLE = Float(64)
+
+        @JvmField
+        val VECTOR2D = Vector(DOUBLE, 2)
+        @JvmField
+        val VECTOR2F = Vector(FLOAT, 2)
+        @JvmField
+        val VECTOR2I = Vector(INT, 2)
+        @JvmField
+        val VECTOR2L = Vector(LONG, 2)
+        @JvmField
+        val VECTOR3D = Vector(DOUBLE, 3)
+        @JvmField
+        val VECTOR3F = Vector(FLOAT, 3)
+        @JvmField
+        val VECTOR3I = Vector(INT, 3)
+        @JvmField
+        val VECTOR3L = Vector(LONG, 3)
+        @JvmField
+        val VECTOR4D = Vector(DOUBLE, 4)
+        @JvmField
+        val VECTOR4F = Vector(FLOAT, 4)
+        @JvmField
+        val VECTOR4I = Vector(INT, 4)
+        @JvmField
+        val VECTOR4L = Vector(LONG, 4)
+
         @JvmStatic
         fun convertJavaType(type: Type): ShaderBytecodeType {
-            if (type.sort == Type.METHOD) {
-                throw IllegalArgumentException()
-            }
-
             return when (type.sort) {
                 Type.VOID -> Void
                 Type.BOOLEAN -> Bool
 
-                Type.BYTE -> Integer.BYTE
-                Type.SHORT -> Integer.SHORT
-                Type.INT -> Integer.JAVA
-                Type.LONG -> Integer.LONG
+                Type.BYTE -> BYTE
+                Type.SHORT -> SHORT
+                Type.INT -> INT
+                Type.LONG -> LONG
 
-                Type.FLOAT -> Float.JAVA
-                Type.DOUBLE -> Float.DOUBLE
+                Type.FLOAT -> FLOAT
+                Type.DOUBLE -> DOUBLE
 
                 Type.OBJECT -> when (type.internalName) {
                     "java/lang/Void", "kotlin/Unit" -> Void
                     "java/lang/Boolean" -> Bool
 
-                    "java/lang/Byte" -> Integer.BYTE
-                    "java/lang/Short" -> Integer.SHORT
-                    "java/lang/Integer" -> Integer.JAVA
-                    "java/lang/Long" -> Integer.LONG
+                    "java/lang/Byte" -> BYTE
+                    "java/lang/Short" -> SHORT
+                    "java/lang/Integer" -> INT
+                    "java/lang/Long" -> LONG
 
-                    "java/lang/Float" -> Float.JAVA
-                    "java/lang/Double" -> Float.DOUBLE
+                    "java/lang/Float" -> FLOAT
+                    "java/lang/Double" -> DOUBLE
+
+                    "org/joml/Vector2dc", "org/joml/Vector2d" -> VECTOR2D
+                    "org/joml/Vector2fc", "org/joml/Vector2f" -> VECTOR2F
+                    "org/joml/Vector2ic", "org/joml/Vector2i" -> VECTOR2I
+                    "org/joml/Vector2Lc", "org/joml/Vector2L" -> VECTOR2L
+
+                    "org/joml/Vector3dc", "org/joml/Vector3d" -> VECTOR3D
+                    "org/joml/Vector3fc", "org/joml/Vector3f" -> VECTOR3F
+                    "org/joml/Vector3ic", "org/joml/Vector3i" -> VECTOR3I
+                    "org/joml/Vector3Lc", "org/joml/Vector3L" -> VECTOR3L
+
+                    "org/joml/Vector4dc", "org/joml/Vector4d" -> VECTOR4D
+                    "org/joml/Vector4fc", "org/joml/Vector4f" -> VECTOR4F
+                    "org/joml/Vector4ic", "org/joml/Vector4i" -> VECTOR4I
+                    "org/joml/Vector4Lc", "org/joml/Vector4L" -> VECTOR4L
                     else -> throw IllegalArgumentException("Cannot convert type $type to spir-v")
                 }
 
@@ -43,15 +92,6 @@ sealed interface ShaderBytecodeType {
                 else -> throw IllegalArgumentException("Cannot convert type $type to spir-v")
             }
         }
-
-        @JvmStatic
-        fun convertJavaMethodType(type: Type): List<ShaderBytecodeType> {
-            if (type.sort != Type.METHOD) {
-                throw IllegalArgumentException()
-            }
-
-            return type.argumentTypes.mapTo(mutableListOf(convertJavaType(type.returnType))) { convertJavaType(it) }
-        }
     }
 
     val rootType: ShaderBytecodeType
@@ -61,8 +101,8 @@ sealed interface ShaderBytecodeType {
 
     fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode
 
-    fun register(builder: ShaderBytecodeBuilder) {
-        builder.types.computeIfAbsent(this) { createLabelNode() }
+    fun getLabel(builder: ShaderBytecodeBuilder): ShaderLabelNode {
+        return builder.types.computeIfAbsent(this) { createLabelNode() }
     }
 
     object Void : ShaderBytecodeType {
@@ -91,17 +131,6 @@ sealed interface ShaderBytecodeType {
         @JvmField
         val signed: Boolean
     ) : ShaderBytecodeType {
-        companion object {
-            @JvmField
-            val BYTE = Integer(8, true)
-            @JvmField
-            val SHORT = Integer(16, true)
-            @JvmField
-            val JAVA = Integer(32, true)
-            @JvmField
-            val LONG = Integer(64, true)
-        }
-
         override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_INT, result, width, if (signed) 1 else 0)
         }
@@ -122,13 +151,6 @@ sealed interface ShaderBytecodeType {
         @JvmField
         val width: Int
     ) : ShaderBytecodeType {
-        companion object {
-            @JvmField
-            val JAVA = Float(32)
-            @JvmField
-            val DOUBLE = Float(64)
-        }
-
         override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_FLOAT, result, width)
         }
@@ -152,9 +174,9 @@ sealed interface ShaderBytecodeType {
             return "Vec$componentCount$componentType"
         }
 
-        override fun register(builder: ShaderBytecodeBuilder) {
-            super.register(builder)
-            componentType.register(builder)
+        override fun getLabel(builder: ShaderBytecodeBuilder): ShaderLabelNode {
+            componentType.getLabel(builder)
+            return super.getLabel(builder)
         }
     }
 
@@ -172,9 +194,9 @@ sealed interface ShaderBytecodeType {
             return "Mat$columnCount$columnType"
         }
 
-        override fun register(builder: ShaderBytecodeBuilder) {
-            super.register(builder)
-            columnType.register(builder)
+        override fun getLabel(builder: ShaderBytecodeBuilder): ShaderLabelNode {
+            columnType.getLabel(builder)
+            return super.getLabel(builder)
         }
     }
 
@@ -192,10 +214,10 @@ sealed interface ShaderBytecodeType {
             return "$returnType(${parameterTypes.joinToString()})"
         }
 
-        override fun register(builder: ShaderBytecodeBuilder) {
-            super.register(builder)
-            returnType.register(builder)
-            parameterTypes.forEach { it.register(builder) }
+        override fun getLabel(builder: ShaderBytecodeBuilder): ShaderLabelNode {
+            returnType.getLabel(builder)
+            parameterTypes.forEach { it.getLabel(builder) }
+            return super.getLabel(builder)
         }
     }
 
@@ -209,16 +231,16 @@ sealed interface ShaderBytecodeType {
             get() = elementType.rootType
 
         override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
-            return length?.let { ShaderInsnNode(OP_TYPE_ARRAY, result, elementType, builder.getConstant(ShaderConstant(Integer.JAVA, it))) } ?: ShaderInsnNode(OP_TYPE_RUNTIME_ARRAY, result, elementType)
+            return length?.let { ShaderInsnNode(OP_TYPE_ARRAY, result, elementType, builder.getConstant(ShaderConstant(INT, it))) } ?: ShaderInsnNode(OP_TYPE_RUNTIME_ARRAY, result, elementType)
         }
 
         override fun toString(): String {
             return length?.let { "$elementType[$it]" } ?: "$elementType[]"
         }
 
-        override fun register(builder: ShaderBytecodeBuilder) {
-            super.register(builder)
-            elementType.register(builder)
+        override fun getLabel(builder: ShaderBytecodeBuilder): ShaderLabelNode {
+            elementType.getLabel(builder)
+            return super.getLabel(builder)
         }
     }
 
@@ -233,12 +255,12 @@ sealed interface ShaderBytecodeType {
         }
 
         override fun toString(): String {
-            return "Pointer$storageClass$type"
+            return "Pointer$type"
         }
 
-        override fun register(builder: ShaderBytecodeBuilder) {
-            super.register(builder)
-            type.register(builder)
+        override fun getLabel(builder: ShaderBytecodeBuilder): ShaderLabelNode {
+            type.getLabel(builder)
+            return super.getLabel(builder)
         }
     }
 

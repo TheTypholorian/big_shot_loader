@@ -1,5 +1,6 @@
 package net.typho.big_shot.loader.shaders.test
 
+import net.typho.big_shot.loader.shaders.ShaderType
 import net.typho.big_shot.loader.shaders.bytecode.ShaderBytecodeType
 import net.typho.big_shot.loader.shaders.bytecode.ShaderBytecodeUtils
 import net.typho.big_shot.loader.shaders.reflect.JavaShaderCompiler
@@ -11,20 +12,27 @@ import org.objectweb.asm.tree.ClassNode
 import java.io.File
 
 object ShaderBuilderTest {
-    @JvmStatic
-    fun main(args: Array<String>) {
-        /*
+    fun compile() {
         val testGlsl = """
             #version 450
 
-            void main() {
+            layout(location = 0) in vec3 pos;
+            layout(location = 0) out vec3 outPos;
+            
+            void main()
+            {
+                outPos = pos + vec3(1, 0.5, 0.25);
             }
         """.trimIndent()
         val buffer = ShaderBytecodeUtils.glslToSpirV(testGlsl, ShaderType.VERTEX)
         val array = ByteArray(buffer.limit())
         buffer.get(0, array)
         File("test_spirv.bin").writeBytes(array)
-         */
+    }
+
+    @JvmStatic
+    fun main(args: Array<String>) {
+        compile()
 
         /*
         val builder = ShaderBytecodeBuilder(EXEC_MODEL_VERTEX)

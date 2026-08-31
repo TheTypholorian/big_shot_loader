@@ -71,8 +71,8 @@ class ShaderBytecodeBuilder(
 
         val varDefs = variables.map { variable -> ShaderInsnNode(OP_VARIABLE, variable.type, variable.label, variable.type.storageClass, variable.initializer).flatten(this) }
 
-        constants.keys.forEach { it.type.register(this) }
-        this.types.keys.toList().forEach { it.register(this) }
+        constants.keys.forEach { it.type.getLabel(this) }
+        this.types.keys.toList().forEach { it.getLabel(this) }
 
         println("types")
 

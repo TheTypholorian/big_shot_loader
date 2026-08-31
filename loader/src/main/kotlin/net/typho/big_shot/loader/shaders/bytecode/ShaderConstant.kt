@@ -10,23 +10,23 @@ data class ShaderConstant(
 
     fun createLabelNode(): ShaderLabelNode = ShaderLabelNode(toString())
 
-    fun createInsn(result: ShaderLabelNode) = ShaderInsnNode(OP_CONSTANT, type, result, value)
+    fun createInsn(result: ShaderLabelNode) = if (value.size == 1) ShaderInsnNode(OP_CONSTANT, type, result, value) else ShaderInsnNode(OP_CONSTANT_COMPOSITE, type, result, value)
 
-    fun cast(to: ShaderBytecodeType): ShaderConstant? {
+    fun tryCast(to: ShaderBytecodeType): ShaderConstant? {
         return when (to) {
             is ShaderBytecodeType.Integer -> {
                 when (to) {
-                    ShaderBytecodeType.Integer.BYTE -> ShaderConstant(to, (value.first() as Number).toByte())
-                    ShaderBytecodeType.Integer.SHORT -> ShaderConstant(to, (value.first() as Number).toShort())
-                    ShaderBytecodeType.Integer.JAVA -> ShaderConstant(to, (value.first() as Number).toInt())
-                    ShaderBytecodeType.Integer.LONG -> ShaderConstant(to, (value.first() as Number).toLong())
+                    ShaderBytecodeType.BYTE -> ShaderConstant(to, (value.first() as Number).toByte())
+                    ShaderBytecodeType.SHORT -> ShaderConstant(to, (value.first() as Number).toShort())
+                    ShaderBytecodeType.INT -> ShaderConstant(to, (value.first() as Number).toInt())
+                    ShaderBytecodeType.LONG -> ShaderConstant(to, (value.first() as Number).toLong())
                     else -> null
                 }
             }
             is ShaderBytecodeType.Float -> {
                 when (to) {
-                    ShaderBytecodeType.Float.JAVA -> ShaderConstant(to, (value.first() as Number).toFloat())
-                    ShaderBytecodeType.Float.DOUBLE -> ShaderConstant(to, (value.first() as Number).toDouble())
+                    ShaderBytecodeType.FLOAT -> ShaderConstant(to, (value.first() as Number).toFloat())
+                    ShaderBytecodeType.DOUBLE -> ShaderConstant(to, (value.first() as Number).toDouble())
                     else -> null
                 }
             }
@@ -35,6 +35,6 @@ data class ShaderConstant(
     }
 
     override fun toString(): String {
-        return if (value.size == 1) "${value.first()}($type)" else "$value($type)"
+        return (if (value.size == 1) value.first() else value).toString()
     }
 }
