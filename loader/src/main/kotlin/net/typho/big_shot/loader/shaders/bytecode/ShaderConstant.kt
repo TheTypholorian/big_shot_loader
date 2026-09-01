@@ -14,22 +14,12 @@ data class ShaderConstant(
 
     fun tryCast(to: ShaderBytecodeType): ShaderConstant? {
         return when (to) {
-            is ShaderBytecodeType.Integer -> {
-                when (to) {
-                    ShaderBytecodeType.BYTE -> ShaderConstant(to, (value.first() as Number).toByte())
-                    ShaderBytecodeType.SHORT -> ShaderConstant(to, (value.first() as Number).toShort())
-                    ShaderBytecodeType.INT -> ShaderConstant(to, (value.first() as Number).toInt())
-                    ShaderBytecodeType.LONG -> ShaderConstant(to, (value.first() as Number).toLong())
-                    else -> null
-                }
-            }
-            is ShaderBytecodeType.Float -> {
-                when (to) {
-                    ShaderBytecodeType.FLOAT -> ShaderConstant(to, (value.first() as Number).toFloat())
-                    ShaderBytecodeType.DOUBLE -> ShaderConstant(to, (value.first() as Number).toDouble())
-                    else -> null
-                }
-            }
+            ShaderBytecodeType.BYTE -> ShaderConstant(to, (value.first() as Number).toByte())
+            ShaderBytecodeType.SHORT -> ShaderConstant(to, (value.first() as Number).toShort())
+            ShaderBytecodeType.INT -> ShaderConstant(to, (value.first() as Number).toInt())
+            ShaderBytecodeType.LONG -> ShaderConstant(to, (value.first() as Number).toLong())
+            ShaderBytecodeType.FLOAT -> ShaderConstant(to, (value.first() as Number).toFloat())
+            ShaderBytecodeType.DOUBLE -> ShaderConstant(to, (value.first() as Number).toDouble())
             else -> null
         }
     }

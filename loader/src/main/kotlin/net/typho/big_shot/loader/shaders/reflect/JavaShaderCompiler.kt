@@ -98,15 +98,13 @@ object JavaShaderCompiler {
             val variable: ShaderVariable
         ) : StackValue
 
-        data class NewComposite(
+        data class NewObject(
             @JvmField
-            val index: Int,
-            @JvmField
-            val type: ShaderBytecodeType
+            val index: Int
         ) : StackValue {
             override fun equals(other: Any?): Boolean {
                 if (this === other) return true
-                if (other !is NewComposite) return false
+                if (other !is NewObject) return false
 
                 if (index != other.index) return false
 
@@ -227,10 +225,6 @@ object JavaShaderCompiler {
             }
 
             fun createVector(type: ShaderBytecodeType.Vector, vararg values: StackValue.Labeled): ShaderLabelNode {
-                if (type.componentCount != values.size) {
-                    throw AssertionError()
-                }
-
                 return if (values.all { it is StackValue.Constant }) {
                     builder.getConstant(ShaderConstant(type, values.map { it.label }))
                 } else {
@@ -240,43 +234,32 @@ object JavaShaderCompiler {
                 }
             }
 
-            fun createVector(type: ShaderBytecodeType.Vector, value: StackValue.Labeled): ShaderLabelNode {
-                return createVector(type, *Array(type.componentCount) { value })
-            }
-
             fun vectorStoreLoad(result: ShaderLabelNode, dest: StackValue) {
                 if (dest is StackValue.LoadVariable) {
                     add(ShaderInsnNode(OP_STORE, dest.variable.label, result))
                     val result1 = ShaderLabelNode()
-                    add(ShaderInsnNode(OP_LOAD, dest.variable.type, result1, dest.variable.label))
-                    stack.push(StackValue.Label(result1))
+                    stack.push(StackValue.LoadVariable(result1, dest.variable) {
+                        add(ShaderInsnNode(OP_LOAD, dest.variable.type, result1, dest.variable.label))
+                    })
                 } else {
                     stack.push(StackValue.Label(result))
                 }
             }
 
-            fun vectorOp(opcode: Int, type: ShaderBytecodeType.Vector, dest: StackValue, add: StackValue, self: StackValue) {
-                if (add is StackValue.Labeled) {
-                    if (self is StackValue.Labeled) {
-                        val result = ShaderLabelNode()
-                        add(ShaderInsnNode(opcode, type, result, self.label, add.label))
-                        vectorStoreLoad(result, dest)
-                    } else {
-                        vectorStoreLoad(add.label, dest)
-                    }
-                } else {
-                    vectorStoreLoad(if (self is StackValue.Labeled) self.label else createVector(type, StackValue.Constant(builder, ShaderConstant(ShaderBytecodeType.INT, 0).tryCast(type.componentType)!!)), dest)
-                }
+            fun vectorOp(opcode: Int, type: ShaderBytecodeType.Vector, dest: StackValue, add: ShaderLabelNode, self: ShaderLabelNode) {
+                val result = ShaderLabelNode()
+                add(ShaderInsnNode(
+                    opcode,
+                    type,
+                    result,
+                    self,
+                    add
+                ))
+                vectorStoreLoad(result, dest)
             }
 
-            fun vectorOp(opcode: Int, type: ShaderBytecodeType.Vector, dest: StackValue, add: ShaderLabelNode, self: StackValue) {
-                if (self is StackValue.Labeled) {
-                    val result = ShaderLabelNode()
-                    add(ShaderInsnNode(opcode, type, result, self.label, add))
-                    vectorStoreLoad(result, dest)
-                } else {
-                    vectorStoreLoad(add, dest)
-                }
+            fun vectorOpSelf(opcode: Int, type: ShaderBytecodeType.Vector, add: ShaderLabelNode, self: StackValue.Labeled) {
+                vectorOp(opcode, type, self, add, self.label)
             }
 
             for (insn in node.instructions) {
@@ -311,7 +294,7 @@ object JavaShaderCompiler {
                                     if (value.variable.label.name == null) {
                                         value.variable.label.name = node.localVariables?.firstOrNull { it.index == insn.`var` }?.name
                                     }
-                                } else if (value !is StackValue.NewComposite) {
+                                } else {
                                     val local = locals[insn.`var`]!!
 
                                     add(ShaderInsnNode(OP_STORE, local.label, (value as StackValue.Labeled).label))
@@ -323,41 +306,49 @@ object JavaShaderCompiler {
                         continue
                     }
                     is MethodInsnNode -> {
-                        if (insn.name == "<init>" && insn.desc == "()V") { // we don't care about empty <init>s
-                            (stack.peek() as? StackValue.NewComposite)?.type?.let { type ->
-                                if (type == ShaderBytecodeType.convertJavaType(Type.getObjectType(insn.owner))) {
-                                    stack.pop()
-                                    continue
-                                }
-                            }
-                        }
-
                         fun vector(type: ShaderBytecodeType.Vector, prim: String, name: String) {
                             val fullPrim = prim.repeat(type.componentCount)
 
                             fun op(opcode: Int) {
                                 when (insn.desc) {
-                                    "(${prim}Lorg/joml/$name;)Lorg/joml/$name;" -> vectorOp(opcode, type, stack.pop(), createVector(type, *stack.popSingleVectorComponent(type)), stack.pop())
-                                    "(${fullPrim}Lorg/joml/$name;)Lorg/joml/$name;" -> vectorOp(opcode, type, stack.pop(), createVector(type, *stack.popVectorComponents(type)), stack.pop())
-                                    "(Lorg/joml/${name}c;Lorg/joml/$name;)Lorg/joml/$name;" -> vectorOp(opcode, type, stack.pop(), stack.pop(), stack.pop())
+                                    "(${prim}Lorg/joml/$name;)Lorg/joml/$name;" -> vectorOp(opcode, type, stack.pop(), createVector(type, *stack.popSingleVectorComponent(type)), (stack.pop() as StackValue.Labeled).label)
+                                    "(${fullPrim}Lorg/joml/$name;)Lorg/joml/$name;" -> vectorOp(opcode, type, stack.pop(), createVector(type, *stack.popVectorComponents(type)), (stack.pop() as StackValue.Labeled).label)
+                                    "(Lorg/joml/${name}c;Lorg/joml/$name;)Lorg/joml/$name;" -> vectorOp(opcode, type, stack.pop(), (stack.pop() as StackValue.Labeled).label, (stack.pop() as StackValue.Labeled).label)
+
+                                    "(${prim})Lorg/joml/$name;" -> vectorOpSelf(opcode, type, createVector(type, *stack.popSingleVectorComponent(type)), stack.pop() as StackValue.Labeled)
+                                    "(${fullPrim})Lorg/joml/$name;" -> vectorOpSelf(opcode, type, createVector(type, *stack.popVectorComponents(type)), stack.pop() as StackValue.Labeled)
+                                    "(Lorg/joml/${name}c;)Lorg/joml/$name;" -> vectorOpSelf(opcode, type, (stack.pop() as StackValue.Labeled).label, stack.pop() as StackValue.Labeled)
+
                                     else -> TODO()
                                 }
                             }
 
                             when (insn.name) {
                                 "add" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_I_ADD else OP_F_ADD)
-                                // TODO different defaults with 0
-                                //"sub" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_I_SUB else OP_F_SUB)
-                                //"mul" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_I_MUL else OP_F_MUL)
-                                //"div" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_S_DIV else OP_F_DIV)
-                                "length" -> {
-                                }
+                                "sub" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_I_SUB else OP_F_SUB)
+                                "mul" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_I_MUL else OP_F_MUL)
+                                "div" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_S_DIV else OP_F_DIV)
+                                "length" -> TODO()
                                 "<init>" -> {
                                     when (insn.desc) {
+                                        "()V" -> {
+                                            val vec = createVector(type, StackValue.Label(builder.getConstant(ShaderConstant(ShaderBytecodeType.INT, 0).tryCast(type.componentType)!!)))
+                                            val self = stack.pop() as StackValue.NewObject
+                                            stack.replace(self, StackValue.Label(vec))
+                                        }
+                                        "(${prim})V" -> {
+                                            val vec = createVector(type, *stack.popSingleVectorComponent(type))
+                                            val self = stack.pop() as StackValue.NewObject
+                                            stack.replace(self, StackValue.Label(vec))
+                                        }
                                         "(${fullPrim})V" -> {
                                             val vec = createVector(type, *stack.popVectorComponents(type))
-                                            val self = stack.pop()
-
+                                            val self = stack.pop() as StackValue.NewObject
+                                            stack.replace(self, StackValue.Label(vec))
+                                        }
+                                        "(Lorg/joml/${name}c;)V" -> {
+                                            val vec = createVector(type, stack.pop() as StackValue.Labeled)
+                                            val self = stack.pop() as StackValue.NewObject
                                             stack.replace(self, StackValue.Label(vec))
                                         }
                                         else -> TODO()
@@ -470,7 +461,7 @@ object JavaShaderCompiler {
                     }
                     is TypeInsnNode -> {
                         when (insn.opcode) {
-                            Opcodes.NEW -> stack.push(StackValue.NewComposite(idCounter++, ShaderBytecodeType.convertJavaType(Type.getObjectType(insn.desc))))
+                            Opcodes.NEW -> stack.push(StackValue.NewObject(idCounter++))
                             Opcodes.CHECKCAST -> {}
                             else -> TODO("${insn.opcode}")
                         }

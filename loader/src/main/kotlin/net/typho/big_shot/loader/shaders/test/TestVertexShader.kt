@@ -9,18 +9,17 @@ import org.joml.Vector4fc
 abstract class TestVertexShader : JavaShader.Vertex() {
     @get:Input
     @get:Location(0)
-    abstract val pos: Vector4fc
+    abstract val pos: Vector3fc
     @get:Input
     @get:Location(1)
-    abstract val pos2: Vector4fc
+    abstract val pos2: Vector3fc
 
     @set:Output
     @set:Location(0)
-    abstract var outPos: Vector4fc
+    abstract var outPos: Vector3fc
 
     override fun main() {
-        val a = 2f
-        val temp = Vector4f()
-        outPos = Vector4f(1f, a, 3f, 10f).add(pos, temp)
+        val temp = Vector3f()
+        outPos = Vector3f().div(1f).mul(2f, temp).sub(10f, 15f, -2f)
     }
 }

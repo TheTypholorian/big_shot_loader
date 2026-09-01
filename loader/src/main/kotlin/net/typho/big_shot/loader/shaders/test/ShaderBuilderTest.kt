@@ -21,7 +21,9 @@ object ShaderBuilderTest {
             
             void main()
             {
-                outPos = pos + vec3(1, 0.5, 0.25);
+                vec3 temp = vec3(0.0);
+                temp = (vec3(0.0) / vec3(1.0)) * vec3(2.0);
+                outPos = (temp = temp - vec3(10.0, 15.0, -2.0));
             }
         """.trimIndent()
         val buffer = ShaderBytecodeUtils.glslToSpirV(testGlsl, ShaderType.VERTEX)

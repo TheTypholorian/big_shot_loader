@@ -28,7 +28,7 @@ open class ShaderLabelNode @JvmOverloads constructor(
         return buildString {
             append("ShaderLabelNode")
             name?.let { append(" $it") }
-            id?.let { append(" id=$it") }
+            id?.let { append(" id=$it") } ?: append(" hash=#${super.hashCode()}")
         }
     }
 }

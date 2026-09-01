@@ -1,6 +1,6 @@
 package net.typho.big_shot.loader.shaders.bytecode
 
-class ShaderFunction @JvmOverloads constructor(
+data class ShaderFunction @JvmOverloads constructor(
     @JvmField
     val type: ShaderBytecodeType.Function,
     @JvmField
