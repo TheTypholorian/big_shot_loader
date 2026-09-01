@@ -20,6 +20,6 @@ abstract class TestVertexShader : JavaShader.Vertex() {
 
     override fun main() {
         val temp = Vector3f()
-        outPos = Vector3f().div(1f).mul(2f, temp).sub(10f, 15f, -2f)
+        outPos = Vector3f().div(1f, temp).mul(2f).sub(10f, 15f, -2f)
     }
 }

@@ -239,7 +239,7 @@ object JavaShaderCompiler {
                     add(ShaderInsnNode(OP_STORE, dest.variable.label, result))
                     val result1 = ShaderLabelNode()
                     stack.push(StackValue.LoadVariable(result1, dest.variable) {
-                        add(ShaderInsnNode(OP_LOAD, dest.variable.type, result1, dest.variable.label))
+                        add(ShaderInsnNode(OP_LOAD, dest.variable.type.type, result1, dest.variable.label))
                     })
                 } else {
                     stack.push(StackValue.Label(result))
