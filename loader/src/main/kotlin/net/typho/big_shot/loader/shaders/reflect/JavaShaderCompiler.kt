@@ -175,19 +175,25 @@ object JavaShaderCompiler {
             add(ShaderInsnNode(OP_LABEL, ShaderLabelNode()))
 
             val stack = Stack()
-            val locals = mutableMapOf<Int, ShaderVariable>()
+            val locals = mutableMapOf<Int, ShaderVariable?>()
             var idCounter = 0
 
-            node.localVariables?.forEach { local ->
-                if (node.access and Opcodes.ACC_STATIC != 0 || local.index != 0) { // "this" should be null in the stack
-                    val type = ShaderBytecodeType.convertJavaType(Type.getType(local.signature ?: local.desc))
+            fun getLocal(id: Int) = locals.computeIfAbsent(id) {
+                node.localVariables?.forEach { local ->
+                    if (local.index == id) {
+                        if (node.access and Opcodes.ACC_STATIC != 0 || local.index != 0) { // "this" should be null in the stack
+                            val type = ShaderBytecodeType.convertJavaType(Type.getType(local.signature ?: local.desc))
 
-                    if (type !is ShaderBytecodeType.Array) { // arrays are defined later
-                        val variable = ShaderVariable(ShaderBytecodeType.Pointer(STORAGE_CLASS_FUNCTION, type), ShaderLabelNode(local.name))
-                        locals[local.index] = variable
-                        add(ShaderInsnNode(OP_VARIABLE, variable.type, variable.label, variable.type.storageClass, variable.initializer))
+                            if (type !is ShaderBytecodeType.Array) { // arrays are defined later
+                                val variable = ShaderVariable(ShaderBytecodeType.Pointer(STORAGE_CLASS_FUNCTION, type), ShaderLabelNode(local.name))
+                                add(ShaderInsnNode(OP_VARIABLE, variable.type, variable.label, variable.type.storageClass, variable.initializer))
+                                return@computeIfAbsent variable
+                            }
+                        }
                     }
                 }
+
+                return@computeIfAbsent null
             }
 
             fun const(type: ShaderBytecodeType, value: Any) {
@@ -268,7 +274,7 @@ object JavaShaderCompiler {
                     is VarInsnNode -> {
                         when (insn.opcode) {
                             Opcodes.ILOAD, Opcodes.LLOAD, Opcodes.FLOAD, Opcodes.DLOAD, Opcodes.ALOAD -> {
-                                val local = locals[insn.`var`]
+                                val local = getLocal(insn.`var`)
 
                                 if (local == null) {
                                     stack.push(StackValue.This)
@@ -285,7 +291,7 @@ object JavaShaderCompiler {
                                 val value = stack.pop()
 
                                 if (value is StackValue.Array) {
-                                    if (locals[insn.`var`] != null) {
+                                    if (getLocal(insn.`var`) != null) {
                                         TODO("reassigning arrays?")
                                     }
 
@@ -295,7 +301,7 @@ object JavaShaderCompiler {
                                         value.variable.label.name = node.localVariables?.firstOrNull { it.index == insn.`var` }?.name
                                     }
                                 } else {
-                                    val local = locals[insn.`var`]!!
+                                    val local = getLocal(insn.`var`)!!
 
                                     add(ShaderInsnNode(OP_STORE, local.label, (value as StackValue.Labeled).label))
                                 }
