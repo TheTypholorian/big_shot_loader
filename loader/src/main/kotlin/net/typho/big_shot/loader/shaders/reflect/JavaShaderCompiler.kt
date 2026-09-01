@@ -36,6 +36,13 @@ object JavaShaderCompiler {
 
         fun pop() = contents.removeLast().also { println("${contents.size} popped $it") }
 
+        fun popVectorComponents(type: ShaderBytecodeType.Vector): Array<StackValue.Labeled> = Array(type.componentCount) { pop() as StackValue.Labeled }.reversedArray()
+
+        fun popSingleVectorComponent(type: ShaderBytecodeType.Vector): Array<StackValue.Labeled> {
+            val v = pop() as StackValue.Labeled
+            return Array(type.componentCount) { v }
+        }
+
         fun dup() {
             contents.add(contents.last().also { println("${contents.size + 1} dup $it") })
         }
@@ -219,6 +226,59 @@ object JavaShaderCompiler {
                 stack.push(StackValue.Label(r))
             }
 
+            fun createVector(type: ShaderBytecodeType.Vector, vararg values: StackValue.Labeled): ShaderLabelNode {
+                if (type.componentCount != values.size) {
+                    throw AssertionError()
+                }
+
+                return if (values.all { it is StackValue.Constant }) {
+                    builder.getConstant(ShaderConstant(type, values.map { it.label }))
+                } else {
+                    val result = ShaderLabelNode()
+                    add(ShaderInsnNode(OP_COMPOSITE_CONSTRUCT, type, result, values.map { it.label }))
+                    result
+                }
+            }
+
+            fun createVector(type: ShaderBytecodeType.Vector, value: StackValue.Labeled): ShaderLabelNode {
+                return createVector(type, *Array(type.componentCount) { value })
+            }
+
+            fun vectorStoreLoad(result: ShaderLabelNode, dest: StackValue) {
+                if (dest is StackValue.LoadVariable) {
+                    add(ShaderInsnNode(OP_STORE, dest.variable.label, result))
+                    val result1 = ShaderLabelNode()
+                    add(ShaderInsnNode(OP_LOAD, dest.variable.type, result1, dest.variable.label))
+                    stack.push(StackValue.Label(result1))
+                } else {
+                    stack.push(StackValue.Label(result))
+                }
+            }
+
+            fun vectorOp(opcode: Int, type: ShaderBytecodeType.Vector, dest: StackValue, add: StackValue, self: StackValue) {
+                if (add is StackValue.Labeled) {
+                    if (self is StackValue.Labeled) {
+                        val result = ShaderLabelNode()
+                        add(ShaderInsnNode(opcode, type, result, self.label, add.label))
+                        vectorStoreLoad(result, dest)
+                    } else {
+                        vectorStoreLoad(add.label, dest)
+                    }
+                } else {
+                    vectorStoreLoad(if (self is StackValue.Labeled) self.label else createVector(type, StackValue.Constant(builder, ShaderConstant(ShaderBytecodeType.INT, 0).tryCast(type.componentType)!!)), dest)
+                }
+            }
+
+            fun vectorOp(opcode: Int, type: ShaderBytecodeType.Vector, dest: StackValue, add: ShaderLabelNode, self: StackValue) {
+                if (self is StackValue.Labeled) {
+                    val result = ShaderLabelNode()
+                    add(ShaderInsnNode(opcode, type, result, self.label, add))
+                    vectorStoreLoad(result, dest)
+                } else {
+                    vectorStoreLoad(add, dest)
+                }
+            }
+
             for (insn in node.instructions) {
                 when (insn) {
                     is LabelNode, is LineNumberNode -> continue
@@ -272,119 +332,53 @@ object JavaShaderCompiler {
                             }
                         }
 
-                        when (insn.owner) {
-                            "org/joml/Vector3fc" -> {
-                                when (insn.name) {
-                                    "add" -> {
-                                        when (insn.desc) {
-                                            "(FFFLorg/joml/Vector3f;)Lorg/joml/Vector3f;" -> {
-                                                val dest = stack.pop()
-                                                val z = stack.pop() as StackValue.Labeled
-                                                val y = stack.pop() as StackValue.Labeled
-                                                val x = stack.pop() as StackValue.Labeled
-                                                val self = stack.pop() as StackValue.Labeled
+                        fun vector(type: ShaderBytecodeType.Vector, prim: String, name: String) {
+                            val fullPrim = prim.repeat(type.componentCount)
 
-                                                val type = ShaderBytecodeType.VECTOR3F
-
-                                                val other = if (x is StackValue.Constant && y is StackValue.Constant && z is StackValue.Constant) {
-                                                    builder.getConstant(ShaderConstant(type, x.label, y.label, z.label))
-                                                } else {
-                                                    val result = ShaderLabelNode()
-                                                    add(ShaderInsnNode(OP_COMPOSITE_CONSTRUCT, type, result, x.label, y.label, z.label))
-                                                    result
-                                                }
-
-                                                val result = ShaderLabelNode()
-                                                add(ShaderInsnNode(OP_F_ADD, type, result, self.label, other))
-                                                stack.push(StackValue.Label(result))
-
-                                                if (dest is StackValue.LoadVariable) {
-                                                    add(ShaderInsnNode(OP_STORE, dest.variable.label, result))
-                                                }
-
-                                                continue
-                                            }
-                                            "(Lorg/joml/Vector3fc;Lorg/joml/Vector3f;)Lorg/joml/Vector3f;" -> {
-                                                val dest = stack.pop()
-                                                val add = stack.pop()
-                                                val self = stack.pop()
-
-                                                val type = ShaderBytecodeType.VECTOR3F
-
-                                                if (add is StackValue.Labeled) {
-                                                    if (self is StackValue.Labeled) {
-                                                        val result = ShaderLabelNode()
-                                                        add(ShaderInsnNode(OP_F_ADD, type, result, self.label, add.label))
-
-                                                        if (dest is StackValue.LoadVariable) {
-                                                            add(ShaderInsnNode(OP_STORE, dest.variable.label, result))
-                                                            val result1 = ShaderLabelNode()
-                                                            add(ShaderInsnNode(OP_LOAD, type, result1, dest.variable.label))
-                                                            stack.push(StackValue.Label(result1))
-                                                        } else {
-                                                            stack.push(StackValue.Label(result))
-                                                        }
-                                                    } else {
-                                                        if (dest is StackValue.LoadVariable) {
-                                                            add(ShaderInsnNode(OP_STORE, dest.variable.label, add.label))
-                                                            val result1 = ShaderLabelNode()
-                                                            add(ShaderInsnNode(OP_LOAD, type, result1, dest.variable.label))
-                                                            stack.push(StackValue.Label(result1))
-                                                        } else {
-                                                            stack.push(StackValue.Label(add.label))
-                                                        }
-                                                    }
-                                                } else {
-                                                    if (self is StackValue.Labeled) {
-                                                        if (dest is StackValue.LoadVariable) {
-                                                            add(ShaderInsnNode(OP_STORE, dest.variable.label, self.label))
-                                                            val result1 = ShaderLabelNode()
-                                                            add(ShaderInsnNode(OP_LOAD, type, result1, dest.variable.label))
-                                                            stack.push(StackValue.Label(result1))
-                                                        } else {
-                                                            stack.push(StackValue.Label(self.label))
-                                                        }
-                                                    } else {
-                                                        val zero = builder.getConstant(ShaderConstant(ShaderBytecodeType.FLOAT, 0f))
-                                                        val const = builder.getConstant(ShaderConstant(type, zero, zero, zero))
-
-                                                        if (dest is StackValue.LoadVariable) {
-                                                            add(ShaderInsnNode(OP_STORE, dest.variable.label, const))
-                                                            val result1 = ShaderLabelNode()
-                                                            add(ShaderInsnNode(OP_LOAD, type, result1, dest.variable.label))
-                                                            stack.push(StackValue.Label(result1))
-                                                        } else {
-                                                            stack.push(StackValue.Label(const))
-                                                        }
-                                                    }
-                                                }
-
-                                                continue
-                                            }
-                                        }
-                                    }
+                            fun op(opcode: Int) {
+                                when (insn.desc) {
+                                    "(${prim}Lorg/joml/$name;)Lorg/joml/$name;" -> vectorOp(opcode, type, stack.pop(), createVector(type, *stack.popSingleVectorComponent(type)), stack.pop())
+                                    "(${fullPrim}Lorg/joml/$name;)Lorg/joml/$name;" -> vectorOp(opcode, type, stack.pop(), createVector(type, *stack.popVectorComponents(type)), stack.pop())
+                                    "(Lorg/joml/${name}c;Lorg/joml/$name;)Lorg/joml/$name;" -> vectorOp(opcode, type, stack.pop(), stack.pop(), stack.pop())
+                                    else -> TODO()
                                 }
                             }
-                            "org/joml/Vector3f" -> {
-                                when (insn.name) {
-                                    "<init>" -> {
-                                        when (insn.desc) {
-                                            "(FFF)V" -> {
-                                                val z = stack.pop()
-                                                val y = stack.pop()
-                                                val x = stack.pop()
-                                                val self = stack.pop()
 
-                                                if (x is StackValue.Constant && y is StackValue.Constant && z is StackValue.Constant) {
-                                                    val type = ShaderBytecodeType.VECTOR3F
-                                                    val const = ShaderConstant(type, builder.getConstant(x.const), builder.getConstant(y.const), builder.getConstant(z.const))
-                                                    stack.replace(self, StackValue.Constant(builder, const))
-                                                    continue
-                                                }
-                                            }
+                            when (insn.name) {
+                                "add" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_I_ADD else OP_F_ADD)
+                                // TODO different defaults with 0
+                                //"sub" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_I_SUB else OP_F_SUB)
+                                //"mul" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_I_MUL else OP_F_MUL)
+                                //"div" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_S_DIV else OP_F_DIV)
+                                "length" -> {
+                                }
+                                "<init>" -> {
+                                    when (insn.desc) {
+                                        "(${fullPrim})V" -> {
+                                            val vec = createVector(type, *stack.popVectorComponents(type))
+                                            val self = stack.pop()
+
+                                            stack.replace(self, StackValue.Label(vec))
                                         }
+                                        else -> TODO()
                                     }
                                 }
+                                else -> TODO()
+                            }
+                        }
+
+                        when (insn.owner) {
+                            "org/joml/Vector2f", "org/joml/Vector2fc" -> {
+                                vector(ShaderBytecodeType.VECTOR2F, "F", "Vector2f")
+                                continue
+                            }
+                            "org/joml/Vector3f", "org/joml/Vector3fc" -> {
+                                vector(ShaderBytecodeType.VECTOR3F, "F", "Vector3f")
+                                continue
+                            }
+                            "org/joml/Vector4f", "org/joml/Vector4fc" -> {
+                                vector(ShaderBytecodeType.VECTOR4F, "F", "Vector4f")
+                                continue
                             }
                             "kotlin/jvm/internal/Intrinsics" -> {
                                 repeat(Type.getArgumentCount(insn.desc)) {
