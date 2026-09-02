@@ -8,6 +8,7 @@ import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
 import java.nio.ByteBuffer
+import java.util.function.Supplier
 import kotlin.metadata.jvm.KotlinClassMetadata
 import kotlin.metadata.jvm.getterSignature
 import kotlin.metadata.jvm.setterSignature
@@ -66,16 +67,30 @@ object JavaShaderCompiler {
             override val label: ShaderLabelNode
         ) : Labeled
 
-        data class LoadVariable(
-            private val label0: ShaderLabelNode,
+        class LoadVariable(
+            instructions: MutableList<ShaderInsnNode>,
             @JvmField
-            val variable: ShaderVariable,
-            @JvmField
-            val load: Runnable
+            val variable: ShaderVariable
         ) : Labeled {
             override val label: ShaderLabelNode by lazy {
-                load.run()
-                label0
+                ShaderLabelNode().also { instructions.add(ShaderInsnNode(OP_LOAD, variable.type.type, it, variable.label)) }
+            }
+
+            override fun equals(other: Any?): Boolean {
+                if (this === other) return true
+                if (other !is LoadVariable) return false
+
+                if (variable != other.variable) return false
+
+                return true
+            }
+
+            override fun hashCode(): Int {
+                return variable.hashCode()
+            }
+
+            override fun toString(): String {
+                return "LoadVariable(variable=$variable)"
             }
         }
 
@@ -243,10 +258,7 @@ object JavaShaderCompiler {
             fun vectorStoreLoad(result: ShaderLabelNode, dest: StackValue) {
                 if (dest is StackValue.LoadVariable) {
                     add(ShaderInsnNode(OP_STORE, dest.variable.label, result))
-                    val result1 = ShaderLabelNode()
-                    stack.push(StackValue.LoadVariable(result1, dest.variable) {
-                        add(ShaderInsnNode(OP_LOAD, dest.variable.type.type, result1, dest.variable.label))
-                    })
+                    stack.push(StackValue.LoadVariable(this, dest.variable))
                 } else {
                     stack.push(StackValue.Label(result))
                 }
@@ -281,10 +293,7 @@ object JavaShaderCompiler {
                                 } else if (local.type.type is ShaderBytecodeType.Array) {
                                     stack.push(StackValue.Array(local))
                                 } else {
-                                    val label = ShaderLabelNode()
-                                    stack.push(StackValue.LoadVariable(label, local) {
-                                        add(ShaderInsnNode(OP_LOAD, local.type.type, label, local.label))
-                                    })
+                                    stack.push(StackValue.LoadVariable(this, local))
                                 }
                             }
                             Opcodes.ISTORE, Opcodes.LSTORE, Opcodes.FSTORE, Opcodes.DSTORE, Opcodes.ASTORE -> {
@@ -300,10 +309,10 @@ object JavaShaderCompiler {
                                     if (value.variable.label.name == null) {
                                         value.variable.label.name = node.localVariables?.firstOrNull { it.index == insn.`var` }?.name
                                     }
+                                } else if (value is StackValue.LoadVariable && value.variable.type.type is ShaderBytecodeType.Vector) {
+                                    throw UnsupportedOperationException("Cannot store a mutable ${value.variable.type.type} value from one variable to another, since joml vectors are mutable while glsl vectors are immutable.")
                                 } else {
-                                    val local = getLocal(insn.`var`)!!
-
-                                    add(ShaderInsnNode(OP_STORE, local.label, (value as StackValue.Labeled).label))
+                                    add(ShaderInsnNode(OP_STORE, getLocal(insn.`var`)!!.label, (value as StackValue.Labeled).label))
                                 }
                             }
                             else -> TODO()
@@ -401,10 +410,7 @@ object JavaShaderCompiler {
                                         TODO()
                                     }
 
-                                    val result = ShaderLabelNode()
-                                    stack.push(StackValue.LoadVariable(result, v) {
-                                        add(ShaderInsnNode(OP_LOAD, v.type.type, result, v.label))
-                                    })
+                                    stack.push(StackValue.LoadVariable(this, v))
                                     continue
                                 }
                                 STORAGE_CLASS_OUTPUT -> {
