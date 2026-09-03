@@ -19,6 +19,13 @@ object ShaderBuilderTest {
             layout(location = 0) in vec3 pos;
             layout(location = 0) out vec3 outPos;
             
+            struct A {
+                float v;
+            };
+            struct A {
+                float v;
+            };
+            
             void main()
             {
                 outPos = normalize(pos);

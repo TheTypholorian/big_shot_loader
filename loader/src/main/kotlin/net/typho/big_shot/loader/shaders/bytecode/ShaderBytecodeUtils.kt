@@ -101,7 +101,7 @@ object ShaderBytecodeUtils {
                         entrypointMethod,
                         options
                     ),
-                    "Compiling $type shader $fileName"
+                    "Compiling $type shader \"$fileName\""
                 )
             )!!
         }

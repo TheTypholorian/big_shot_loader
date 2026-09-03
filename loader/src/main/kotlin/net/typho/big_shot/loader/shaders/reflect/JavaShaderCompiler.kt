@@ -352,7 +352,7 @@ object JavaShaderCompiler {
                                             type,
                                             result,
                                             builder.import("GLSL.std.450"),
-                                            69,
+                                            GLSL_NORMALIZE,
                                             self.label
                                         ))
                                         vectorStoreLoad(result, self)
@@ -366,7 +366,7 @@ object JavaShaderCompiler {
                                             type,
                                             result,
                                             builder.import("GLSL.std.450"),
-                                            69,
+                                            GLSL_NORMALIZE,
                                             self.label
                                         ))
                                         vectorStoreLoad(result, dest)
