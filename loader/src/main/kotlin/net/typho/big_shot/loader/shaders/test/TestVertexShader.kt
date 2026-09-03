@@ -19,9 +19,7 @@ abstract class TestVertexShader : JavaShader.Vertex() {
     abstract var outPos: Vector3fc
 
     override fun main() {
-        val temp = Vector3f()
-        val temp2 = Vector3f(temp).sub(pos2)
-        outPos = temp.add(pos)
-        outPos = temp2
+        val temp = Vector3f(pos)
+        outPos = temp.normalize()
     }
 }

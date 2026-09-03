@@ -343,7 +343,37 @@ object JavaShaderCompiler {
                                 "sub" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_I_SUB else OP_F_SUB)
                                 "mul" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_I_MUL else OP_F_MUL)
                                 "div" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_S_DIV else OP_F_DIV)
-                                "length" -> TODO()
+                                "normalize" -> when (insn.desc) {
+                                    "()Lorg/joml/$name;" -> {
+                                        val self = stack.pop() as StackValue.Labeled
+                                        val result = ShaderLabelNode()
+                                        add(ShaderInsnNode(
+                                            OP_EXT_INST,
+                                            type,
+                                            result,
+                                            builder.import("GLSL.std.450"),
+                                            69,
+                                            self.label
+                                        ))
+                                        vectorStoreLoad(result, self)
+                                    }
+                                    "(Lorg/joml/$name;)Lorg/joml/$name;" -> {
+                                        val dest = stack.pop()
+                                        val self = stack.pop() as StackValue.Labeled
+                                        val result = ShaderLabelNode()
+                                        add(ShaderInsnNode(
+                                            OP_EXT_INST,
+                                            type,
+                                            result,
+                                            builder.import("GLSL.std.450"),
+                                            69,
+                                            self.label
+                                        ))
+                                        vectorStoreLoad(result, dest)
+                                    }
+
+                                    else -> TODO()
+                                }
                                 "<init>" -> {
                                     when (insn.desc) {
                                         "()V" -> {
