@@ -3,23 +3,32 @@ package net.typho.big_shot.loader.shaders.test
 import net.typho.big_shot.loader.shaders.reflect.JavaShader
 import org.joml.Vector3f
 import org.joml.Vector3fc
-import org.joml.Vector4f
-import org.joml.Vector4fc
 
-abstract class TestVertexShader : JavaShader.Vertex() {
-    @get:Input
-    @get:Location(0)
-    abstract val pos: Vector3fc
-    @get:Input
-    @get:Location(1)
-    abstract val pos2: Vector3fc
+class TestVertexShader : JavaShader.Vertex() {
+    @Import
+    val lib = TestLibrary()
 
-    @set:Output
-    @set:Location(0)
-    abstract var outPos: Vector3fc
+    @Input
+    @Location(0)
+    @JvmField
+    var pos: Vector3fc = Vector3f()
+    @Input
+    @Location(1)
+    @JvmField
+    var pos2: Vector3fc = Vector3f()
+
+    @Output
+    @Location(0)
+    @JvmField
+    var outPos: Vector3fc = Vector3f()
 
     override fun main() {
-        val temp = Vector3f(pos)
-        outPos = temp.normalize()
+        outPos = lib.add(pos, pos2).normalize()
+    }
+}
+
+class TestLibrary : JavaShader.Library() {
+    fun add(a: Vector3fc, b: Vector3fc): Vector3f {
+        return a.add(b, Vector3f())
     }
 }

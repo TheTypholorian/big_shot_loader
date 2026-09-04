@@ -4,12 +4,14 @@ import net.typho.big_shot.loader.shaders.ShaderType
 import net.typho.big_shot.loader.shaders.bytecode.ShaderBytecodeType
 import net.typho.big_shot.loader.shaders.bytecode.ShaderBytecodeUtils
 import net.typho.big_shot.loader.shaders.reflect.JavaShaderCompiler
+import org.joml.Vector3f
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.signature.SignatureReader
 import org.objectweb.asm.tree.ClassNode
 import java.io.File
+import java.text.NumberFormat
 
 object ShaderBuilderTest {
     fun compile() {
@@ -19,16 +21,9 @@ object ShaderBuilderTest {
             layout(location = 0) in vec3 pos;
             layout(location = 0) out vec3 outPos;
             
-            struct A {
-                float v;
-            };
-            struct A {
-                float v;
-            };
-            
             void main()
             {
-                outPos = normalize(pos);
+                outPos = vec3(mod(pos, 10));
             }
         """.trimIndent()
         val buffer = ShaderBytecodeUtils.glslToSpirV(testGlsl, ShaderType.VERTEX)
@@ -71,6 +66,12 @@ object ShaderBuilderTest {
 
         println(ShaderBytecodeUtils.spirVToGlsl(buffer.asIntBuffer()))
          */
+
+        val shader = TestVertexShader()
+        shader.pos = Vector3f(1f, 2f, 3f)
+        shader.pos2 = Vector3f(-10f, -5f, 20f)
+        shader.main()
+        println("output: ${Vector3f(shader.outPos).toString(NumberFormat.getInstance())}")
 
         val reader = ClassReader(File("loader/build/classes/kotlin/main/net/typho/big_shot/loader/shaders/test/TestVertexShader.class").absoluteFile.readBytes())
         val node = ClassNode()

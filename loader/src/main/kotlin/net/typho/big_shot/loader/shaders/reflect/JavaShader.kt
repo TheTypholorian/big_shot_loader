@@ -1,35 +1,48 @@
 package net.typho.big_shot.loader.shaders.reflect
 
 sealed class JavaShader {
-    abstract fun main()
+    @Target(AnnotationTarget.FIELD)
+    annotation class Import(
+        val name: String = ""
+    )
 
-    @Target(AnnotationTarget.FUNCTION, AnnotationTarget.PROPERTY_GETTER)
+    @Target(AnnotationTarget.FIELD)
     annotation class Input(
         val name: String = ""
     )
 
-    @Target(AnnotationTarget.FUNCTION, AnnotationTarget.PROPERTY_SETTER)
+    @Target(AnnotationTarget.FIELD)
     annotation class Output(
         val name: String = ""
     )
 
-    @Target(AnnotationTarget.FUNCTION, AnnotationTarget.PROPERTY_GETTER)
+    @Target(AnnotationTarget.FIELD)
     annotation class Uniform(
         val name: String = ""
     )
 
-    @Target(AnnotationTarget.FUNCTION, AnnotationTarget.PROPERTY_GETTER, AnnotationTarget.PROPERTY_SETTER)
+    @Target(AnnotationTarget.FIELD)
     annotation class Location(
         val value: Int
     )
 
-    abstract class Vertex : JavaShader()
+    abstract class Vertex : JavaShader() {
+        abstract fun main()
+    }
 
-    abstract class Fragment : JavaShader()
+    abstract class Fragment : JavaShader() {
+        abstract fun main()
+    }
 
-    abstract class Geometry : JavaShader()
+    abstract class Geometry : JavaShader() {
+        abstract fun main()
+    }
 
-    abstract class Compute : JavaShader()
+    abstract class Compute : JavaShader() {
+        abstract fun main()
+    }
+
+    abstract class Library : JavaShader()
 
     // TODO tess shaders
 }

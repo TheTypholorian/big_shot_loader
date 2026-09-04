@@ -1,20 +1,15 @@
 package net.typho.big_shot.loader.shaders.reflect
 
 import net.typho.asm_util.ASMUtil.forEach
-import net.typho.asm_util.KotlinUtil.kotlinMetadata
 import net.typho.asm_util.method.MethodPointer
 import net.typho.big_shot.loader.shaders.bytecode.*
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
 import java.nio.ByteBuffer
-import java.util.function.Supplier
-import kotlin.metadata.jvm.KotlinClassMetadata
-import kotlin.metadata.jvm.getterSignature
-import kotlin.metadata.jvm.setterSignature
 
 object JavaShaderCompiler {
-    data class MethodName(
+    data class AttributeName(
         @JvmField
         val owner: String,
         @JvmField
@@ -135,39 +130,27 @@ object JavaShaderCompiler {
     }
 
     @JvmStatic
-    fun compileField(node: MethodNode, ktMeta: KotlinClassMetadata?): ShaderVariable? {
+    fun compileField(node: FieldNode): ShaderVariable? {
         var storageClass: Int? = null
         var name = node.name
         var type: Type? = null
         var location: Int? = null
 
-        if (ktMeta is KotlinClassMetadata.Class) {
-            for (property in ktMeta.kmClass.properties) {
-                if (property.getterSignature?.let { it.name == name && it.descriptor == node.desc } == true) {
-                    name = property.name
-                    break
-                } else if (property.setterSignature?.let { it.name == name && it.descriptor == node.desc } == true) {
-                    name = property.name
-                    break
-                }
-            }
-        }
-
         node.visibleAnnotations?.forEach { anno ->
             when (anno.desc) {
                 $$"Lnet/typho/big_shot/loader/shaders/reflect/JavaShader$Input;" -> {
                     storageClass = STORAGE_CLASS_INPUT
-                    type = Type.getReturnType(node.desc)
+                    type = Type.getType(node.desc)
                     anno.forEach { key, value -> if (key == "name" && (value as String).isNotEmpty()) name = value }
                 }
                 $$"Lnet/typho/big_shot/loader/shaders/reflect/JavaShader$Output;" -> {
                     storageClass = STORAGE_CLASS_OUTPUT
-                    type = Type.getArgumentTypes(node.desc)[0]
+                    type = Type.getType(node.desc)
                     anno.forEach { key, value -> if (key == "name" && (value as String).isNotEmpty()) name = value }
                 }
                 $$"Lnet/typho/big_shot/loader/shaders/reflect/JavaShader$Uniform;" -> {
                     storageClass = STORAGE_CLASS_UNIFORM
-                    type = Type.getReturnType(node.desc)
+                    type = Type.getType(node.desc)
                     anno.forEach { key, value -> if (key == "name" && (value as String).isNotEmpty()) name = value }
                 }
                 $$"Lnet/typho/big_shot/loader/shaders/reflect/JavaShader$Location;" -> {
@@ -179,11 +162,11 @@ object JavaShaderCompiler {
         storageClass ?: return null
         type ?: return null
 
-        return ShaderVariable(ShaderBytecodeType.Pointer(storageClass, ShaderBytecodeType.convertJavaType(type)), label = ShaderLabelNode(name), location = location)
+        return ShaderVariable(ShaderBytecodeType.Pointer(storageClass, ShaderBytecodeType.convertJavaType(type)), javaType = type, label = ShaderLabelNode(name), location = location)
     }
 
     @JvmStatic
-    fun compile(node: MethodNode, variables: Map<MethodName, ShaderVariable>, builder: ShaderBytecodeBuilder): ShaderFunction {
+    fun compile(node: MethodNode, variables: Map<AttributeName, ShaderVariable>, builder: ShaderBytecodeBuilder): ShaderFunction {
         val func = ShaderFunction(ShaderBytecodeType.convertJavaType(Type.getMethodType(node.desc)) as ShaderBytecodeType.Function, label = ShaderLabelNode(node.name))
 
         func.instructions.apply {
@@ -197,10 +180,11 @@ object JavaShaderCompiler {
                 node.localVariables?.forEach { local ->
                     if (local.index == id) {
                         if (node.access and Opcodes.ACC_STATIC != 0 || local.index != 0) { // "this" should be null in the stack
-                            val type = ShaderBytecodeType.convertJavaType(Type.getType(local.signature ?: local.desc))
+                            val javaType = Type.getType(local.desc)
+                            val type = ShaderBytecodeType.convertJavaType(javaType)
 
                             if (type !is ShaderBytecodeType.Array) { // arrays are defined later
-                                val variable = ShaderVariable(ShaderBytecodeType.Pointer(STORAGE_CLASS_FUNCTION, type), ShaderLabelNode(local.name))
+                                val variable = ShaderVariable(ShaderBytecodeType.Pointer(STORAGE_CLASS_FUNCTION, type), ShaderLabelNode(local.name), javaType = javaType)
                                 add(ShaderInsnNode(OP_VARIABLE, variable.type, variable.label, variable.type.storageClass, variable.initializer))
                                 return@computeIfAbsent variable
                             }
@@ -310,7 +294,7 @@ object JavaShaderCompiler {
                                         value.variable.label.name = node.localVariables?.firstOrNull { it.index == insn.`var` }?.name
                                     }
                                 } else if (value is StackValue.LoadVariable && value.variable.type.type is ShaderBytecodeType.Vector) {
-                                    throw UnsupportedOperationException("Cannot store a mutable ${value.variable.type.type} value from one variable to another, since joml vectors are mutable while glsl vectors are immutable.")
+                                    throw UnsupportedOperationException("Cannot store a mutable ${value.variable.type.type} value from one variable in another, since joml vectors are mutable while glsl vectors are immutable.")
                                 } else {
                                     add(ShaderInsnNode(OP_STORE, getLocal(insn.`var`)!!.label, (value as StackValue.Labeled).label))
                                 }
@@ -343,6 +327,55 @@ object JavaShaderCompiler {
                                 "sub" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_I_SUB else OP_F_SUB)
                                 "mul" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_I_MUL else OP_F_MUL)
                                 "div" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_S_DIV else OP_F_DIV)
+                                "distance" -> when (insn.desc) {
+                                    "(Lorg/joml/${name}c;)$prim" -> {
+                                        val other = stack.pop() as StackValue.Labeled
+                                        val self = stack.pop() as StackValue.Labeled
+                                        val result = ShaderLabelNode()
+                                        add(ShaderInsnNode(
+                                            OP_EXT_INST,
+                                            type.componentType,
+                                            result,
+                                            builder.import("GLSL.std.450"),
+                                            GLSL_DISTANCE,
+                                            self.label,
+                                            other.label
+                                        ))
+                                        stack.push(StackValue.Label(result))
+                                    }
+                                    else -> TODO()
+                                }
+                                "length" -> when (insn.desc) {
+                                    "()$prim" -> {
+                                        val self = stack.pop() as StackValue.Labeled
+                                        val result = ShaderLabelNode()
+                                        add(ShaderInsnNode(
+                                            OP_EXT_INST,
+                                            type.componentType,
+                                            result,
+                                            builder.import("GLSL.std.450"),
+                                            GLSL_LENGTH,
+                                            self.label
+                                        ))
+                                        stack.push(StackValue.Label(result))
+                                    }
+                                    else -> TODO()
+                                }
+                                "lengthSquared" -> when (insn.desc) {
+                                    "()$prim" -> {
+                                        val self = stack.pop() as StackValue.Labeled
+                                        val result = ShaderLabelNode()
+                                        add(ShaderInsnNode(
+                                            OP_DOT,
+                                            type.componentType,
+                                            result,
+                                            self.label,
+                                            self.label
+                                        ))
+                                        stack.push(StackValue.Label(result))
+                                    }
+                                    else -> TODO()
+                                }
                                 "normalize" -> when (insn.desc) {
                                     "()Lorg/joml/$name;" -> {
                                         val self = stack.pop() as StackValue.Labeled
@@ -368,6 +401,41 @@ object JavaShaderCompiler {
                                             builder.import("GLSL.std.450"),
                                             GLSL_NORMALIZE,
                                             self.label
+                                        ))
+                                        vectorStoreLoad(result, dest)
+                                    }
+
+                                    else -> TODO()
+                                }
+                                "cross" -> when (insn.desc) {
+                                    "(Lorg/joml/${name}c;)Lorg/joml/$name;" -> {
+                                        val other = stack.pop() as StackValue.Labeled
+                                        val self = stack.pop() as StackValue.Labeled
+                                        val result = ShaderLabelNode()
+                                        add(ShaderInsnNode(
+                                            OP_EXT_INST,
+                                            type,
+                                            result,
+                                            builder.import("GLSL.std.450"),
+                                            GLSL_CROSS,
+                                            self.label,
+                                            other.label
+                                        ))
+                                        vectorStoreLoad(result, self)
+                                    }
+                                    "(Lorg/joml/${name}c;Lorg/joml/$name;)Lorg/joml/$name;" -> {
+                                        val dest = stack.pop()
+                                        val other = stack.pop() as StackValue.Labeled
+                                        val self = stack.pop() as StackValue.Labeled
+                                        val result = ShaderLabelNode()
+                                        add(ShaderInsnNode(
+                                            OP_EXT_INST,
+                                            type,
+                                            result,
+                                            builder.import("GLSL.std.450"),
+                                            GLSL_CROSS,
+                                            self.label,
+                                            other.label
                                         ))
                                         vectorStoreLoad(result, dest)
                                     }
@@ -429,36 +497,7 @@ object JavaShaderCompiler {
                             }
                         }
 
-                        val name = MethodName(insn.owner, insn.name, insn.desc)
-
-                        variables[name]?.let { v ->
-                            when (v.type.storageClass) {
-                                STORAGE_CLASS_INPUT -> {
-                                    val target = stack.pop()
-
-                                    if (target != StackValue.This) {
-                                        TODO()
-                                    }
-
-                                    stack.push(StackValue.LoadVariable(this, v))
-                                    continue
-                                }
-                                STORAGE_CLASS_OUTPUT -> {
-                                    val value = stack.pop()
-                                    val target = stack.pop()
-
-                                    if (target != StackValue.This || value == StackValue.This) {
-                                        TODO()
-                                    }
-
-                                    add(ShaderInsnNode(OP_STORE, v.label, (value as StackValue.Labeled).label))
-                                    continue
-                                }
-                                else -> TODO()
-                            }
-                        }
-
-                        TODO("call method $name")
+                        TODO()
                     }
                     is LdcInsnNode -> {
                         when (val const = insn.cst) {
@@ -504,10 +543,61 @@ object JavaShaderCompiler {
                     is TypeInsnNode -> {
                         when (insn.opcode) {
                             Opcodes.NEW -> stack.push(StackValue.NewObject(idCounter++))
-                            Opcodes.CHECKCAST -> {}
+                            Opcodes.CHECKCAST -> {
+                                val v = stack.peek()
+
+                                if (v is StackValue.LoadVariable) {
+                                    v.variable.javaType?.let { type ->
+                                        if (type.sort == Type.OBJECT) {
+                                            val name = type.internalName
+
+                                            if (name.equals("${insn.desc}c")) {
+                                                throw UnsupportedOperationException("Illegal cast from an immutable joml class $name to ${insn.desc}")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             else -> TODO("${insn.opcode}")
                         }
                         continue
+                    }
+                    is FieldInsnNode -> {
+                        when (insn.opcode) {
+                            Opcodes.GETFIELD -> {
+                                val name = AttributeName(insn.owner, insn.name, insn.desc)
+
+                                variables[name]?.let { v ->
+                                    val target = stack.pop()
+
+                                    if (target != StackValue.This) {
+                                        TODO()
+                                    }
+
+                                    stack.push(StackValue.LoadVariable(this, v))
+                                    continue
+                                }
+
+                                TODO("$name")
+                            }
+                            Opcodes.PUTFIELD -> {
+                                val name = AttributeName(insn.owner, insn.name, insn.desc)
+
+                                variables[name]?.let { v ->
+                                    val value = stack.pop()
+                                    val target = stack.pop()
+
+                                    if (target != StackValue.This || value == StackValue.This) {
+                                        TODO()
+                                    }
+
+                                    add(ShaderInsnNode(OP_STORE, v.label, (value as StackValue.Labeled).label))
+                                    continue
+                                }
+
+                                TODO("$name")
+                            }
+                        }
                     }
                     else -> {
                         when (insn.opcode) {
@@ -652,14 +742,14 @@ object JavaShaderCompiler {
         builder.capabilities.add(CAP_SHADER)
         builder.import("GLSL.std.450") // TODO
 
-        val ktMeta = node.visibleAnnotations?.firstOrNull { it.desc == "Lkotlin/Metadata;" }?.kotlinMetadata?.let { KotlinClassMetadata.readLenient(it) }
+        //val ktMeta = node.visibleAnnotations?.firstOrNull { it.desc == "Lkotlin/Metadata;" }?.kotlinMetadata?.let { KotlinClassMetadata.readLenient(it) }
 
-        val variables = mutableMapOf<MethodName, ShaderVariable>()
-        node.methods.mapNotNullTo(builder.variables) {
-            val field = compileField(it, ktMeta)
+        val variables = mutableMapOf<AttributeName, ShaderVariable>()
+        node.fields.mapNotNullTo(builder.variables) {
+            val field = compileField(it)
 
             if (field != null) {
-                variables[MethodName(node.name, it.name, it.desc)] = field
+                variables[AttributeName(node.name, it.name, it.desc)] = field
             }
 
             field
