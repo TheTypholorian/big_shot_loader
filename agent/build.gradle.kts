@@ -4,7 +4,7 @@ plugins {
     id("net.fabricmc.fabric-loom") version "1.16-SNAPSHOT"
 }
 
-group = "net.typho.big_shot"
+group = "net.typho"
 version = "1.0.0"
 
 repositories {

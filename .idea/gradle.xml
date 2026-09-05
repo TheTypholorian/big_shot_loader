@@ -27,6 +27,7 @@
             <option value="$PROJECT_DIR$/gradle_plugin" />
             <option value="$PROJECT_DIR$/installer" />
             <option value="$PROJECT_DIR$/loader" />
+            <option value="$PROJECT_DIR$/merger" />
             <option value="$PROJECT_DIR$/test_mod" />
           </set>
         </option>

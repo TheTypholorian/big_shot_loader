@@ -11,9 +11,10 @@ pluginManagement {
 }
 
 include("agent")
-include("installer")
-include("loader")
-include("test_mod")
-includeBuild("gradle_plugin")
 include("data")
 include("decompiler")
+includeBuild("gradle_plugin")
+include("installer")
+include("loader")
+include("merger")
+include("test_mod")

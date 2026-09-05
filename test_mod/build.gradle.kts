@@ -3,7 +3,7 @@ plugins {
     id("net.typho.big_shot.plugin") version "1.0.0"
 }
 
-group = "net.typho.big_shot"
+group = "net.typho"
 version = "1.0.0"
 
 repositories {
