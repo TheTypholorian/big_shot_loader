@@ -8,12 +8,13 @@ import net.typho.big_shot.merger.InnerClassInfo.Companion.toInfo
 import net.typho.big_shot.merger.TypeAnnotationInfo.Companion.toTypeInfo
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassWriter
+import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.AnnotationNode
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.InnerClassNode
 import org.objectweb.asm.tree.TypeAnnotationNode
 import java.io.File
-import kotlin.reflect.KMutableProperty
+import kotlin.reflect.KMutableProperty1
 
 object BigShotClassMerger {
     data class Branch(
@@ -43,6 +44,9 @@ object BigShotClassMerger {
         }
     }
 
+    private fun createMergeInfoAnno() {
+    }
+
     @JvmStatic
     fun merge(name: String, classes: List<Branch>): ClassNode {
         if (classes.map { it.node.version }.toHashSet().size > 1) {
@@ -52,53 +56,58 @@ object BigShotClassMerger {
         val result = ClassNode()
         result.name = name
 
-        fun <T> mergeClassValue(
-            property: KMutableProperty<T>,
+        fun <N : Any, T> mergeValue(
+            nodes: List<N?>,
+            property: KMutableProperty1<N, T>,
+            onEqual: (T?) -> Unit,
             id: Byte,
             valueAnnoDesc: String,
             mergeInfoAnnoDesc: String,
-            valueTransform: (T) -> Any = { it!! }
+            valueToAnno: (T?) -> Any? = { it },
+            valueTransform: (T) -> T? = { it }
         ) {
-            val values = classes.map { property.getter.call(it.node) }
+            val values = nodes.map { it?.let { valueTransform(property.get(it)) } }
 
             if (values.toHashSet().size > 1) {
                 val node = AnnotationNode(mergeInfoAnnoDesc).also {
                     it.values = listOf(
                         "id", id,
-                        "value", values.mapIndexed { index, value ->
-                            AnnotationNode(valueAnnoDesc).also {
-                                it.values = listOf(
-                                    "value", valueTransform(value),
-                                    "for", classes[index].env.toRestriction(true).toNode()
-                                )
+                        "value", values.mapIndexedNotNull { index, value ->
+                            valueToAnno(value)?.let { value ->
+                                AnnotationNode(valueAnnoDesc).also {
+                                    it.values = listOf(
+                                        "value", value,
+                                        "for", classes[index].env.toRestriction(true).toNode()
+                                    )
+                                }
                             }
                         }
                     )
                 }
                 (result.visibleAnnotations ?: mutableListOf<AnnotationNode>().also { result.visibleAnnotations = it }).add(node)
             } else {
-                property.setter.call(result, values.first())
+                onEqual(values.first())
             }
         }
 
-        fun mergeIntClassValue(property: KMutableProperty<Int>, id: Byte) {
-            mergeClassValue(property, id, "Lnet/typho/big_shot/merger/IntValue;", "Lnet/typho/big_shot/merger/MergeIntInfo;")
+        fun <N : Any> mergeIntValue(values: List<N?>, property: KMutableProperty1<N, Int>, onEqual: (Int?) -> Unit, id: Byte, valueTransform: (Int) -> Int? = { it }) {
+            mergeValue(values, property, onEqual, id, "Lnet/typho/big_shot/merger/IntValue;", "Lnet/typho/big_shot/merger/MergeIntInfo;", valueTransform = valueTransform)
         }
 
-        fun mergeStringClassValue(property: KMutableProperty<String?>, id: Byte) {
-            mergeClassValue(property, id, "Lnet/typho/big_shot/merger/StringValue;", "Lnet/typho/big_shot/merger/MergeStringInfo;") { it ?: "" }
+        fun <N : Any> mergeStringValue(values: List<N?>, property: KMutableProperty1<N, String?>, onEqual: (String?) -> Unit, id: Byte, valueTransform: (String?) -> String? = { it }) {
+            mergeValue(values, property, onEqual, id, "Lnet/typho/big_shot/merger/StringValue;", "Lnet/typho/big_shot/merger/MergeStringInfo;", valueToAnno = { it ?: "" }, valueTransform = valueTransform)
         }
 
-        fun mergeStringArrayClassValue(property: KMutableProperty<List<String>?>, id: Byte) {
-            mergeClassValue(property, id, "Lnet/typho/big_shot/merger/StringArrayValue;", "Lnet/typho/big_shot/merger/MergeStringArrayInfo;") { it ?: listOf<String>() }
+        fun <N : Any> mergeStringArrayValue(values: List<N?>, property: KMutableProperty1<N, List<String>?>, onEqual: (List<String>?) -> Unit, id: Byte, valueTransform: (List<String>?) -> List<String>? = { it }) {
+            mergeValue(values, property, onEqual, id, "Lnet/typho/big_shot/merger/StringArrayValue;", "Lnet/typho/big_shot/merger/MergeStringArrayInfo;", valueToAnno = { it ?: listOf<String>() }, valueTransform = valueTransform)
         }
 
-        fun mergeAnnoArrayClassValue(property: KMutableProperty<List<AnnotationNode>?>, id: Byte) {
-            mergeClassValue(property, id, "Lnet/typho/big_shot/merger/AnnotationArrayValue;", "Lnet/typho/big_shot/merger/MergeAnnotationArrayInfo;") { it ?: listOf<AnnotationNode>() }
+        fun <N : Any> mergeAnnoArrayValue(values: List<N?>, property: KMutableProperty1<N, List<AnnotationNode>?>, onEqual: (List<AnnotationNode>?) -> Unit, id: Byte, valueTransform: (List<AnnotationNode>?) -> List<AnnotationNode>? = { it }) {
+            mergeValue(values, property, onEqual, id, "Lnet/typho/big_shot/merger/AnnotationArrayValue;", "Lnet/typho/big_shot/merger/MergeAnnotationArrayInfo;", valueToAnno = { it ?: listOf<AnnotationNode>() }, valueTransform = valueTransform)
         }
 
-        fun mergeTypeAnnoArrayClassValue(property: KMutableProperty<List<TypeAnnotationNode>?>, id: Byte) {
-            mergeClassValue(property, id, "Lnet/typho/big_shot/merger/TypeAnnotationArrayValue;", "Lnet/typho/big_shot/merger/MergeTypeAnnotationArrayInfo;") {
+        fun <N : Any> mergeTypeAnnoArrayValue(values: List<N?>, property: KMutableProperty1<N, List<TypeAnnotationNode>?>, onEqual: (List<TypeAnnotationNode>?) -> Unit, id: Byte, valueTransform: (List<TypeAnnotationNode>?) -> List<TypeAnnotationNode>? = { it }) {
+            mergeValue(values, property, onEqual, id, "Lnet/typho/big_shot/merger/TypeAnnotationArrayValue;", "Lnet/typho/big_shot/merger/MergeTypeAnnotationArrayInfo;", valueToAnno = {
                 it?.map { anno ->
                     val info = anno.toTypeInfo()
                     AnnotationNode("Lnet/typho/big_shot/merger/TypeAnnotationInfo;").also {
@@ -109,11 +118,11 @@ object BigShotClassMerger {
                         )
                     }
                 } ?: listOf<AnnotationNode>()
-            }
+            }, valueTransform = valueTransform)
         }
 
-        fun mergeInnerClassArrayClassValue(property: KMutableProperty<List<InnerClassNode>?>, id: Byte) {
-            mergeClassValue(property, id, "Lnet/typho/big_shot/merger/InnerClassArrayValue;", "Lnet/typho/big_shot/merger/MergeInnerClassArrayInfo;") {
+        fun <N : Any> mergeInnerClassArrayValue(values: List<N?>, property: KMutableProperty1<N, List<InnerClassNode>?>, onEqual: (List<InnerClassNode>?) -> Unit, id: Byte, valueTransform: (List<InnerClassNode>?) -> List<InnerClassNode>? = { it }) {
+            mergeValue(values, property, onEqual, id, "Lnet/typho/big_shot/merger/InnerClassArrayValue;", "Lnet/typho/big_shot/merger/MergeInnerClassArrayInfo;", valueToAnno = {
                 it?.map { inner ->
                     val info = inner.toInfo()
                     AnnotationNode("Lnet/typho/big_shot/merger/InnerClassInfo;").also {
@@ -125,34 +134,41 @@ object BigShotClassMerger {
                         )
                     }
                 } ?: listOf<AnnotationNode>()
-            }
+            }, valueTransform = valueTransform)
         }
 
-        mergeIntClassValue(ClassNode::access, ClassMergeInfoIds.ACCESS)
-        mergeStringClassValue(ClassNode::signature, ClassMergeInfoIds.SIGNATURE)
-        mergeStringClassValue(ClassNode::superName, ClassMergeInfoIds.SUPER_NAME)
-        mergeStringArrayClassValue(ClassNode::interfaces, ClassMergeInfoIds.INTERFACES)
-        mergeStringClassValue(ClassNode::sourceFile, ClassMergeInfoIds.SOURCE_FILE)
-        mergeStringClassValue(ClassNode::sourceDebug, ClassMergeInfoIds.SOURCE_DEBUG)
-        mergeStringClassValue(ClassNode::outerClass, ClassMergeInfoIds.OUTER_CLASS)
-        mergeStringClassValue(ClassNode::outerMethod, ClassMergeInfoIds.OUTER_METHOD)
-        mergeStringClassValue(ClassNode::outerMethodDesc, ClassMergeInfoIds.OUTER_METHOD_DESC)
-        mergeAnnoArrayClassValue(ClassNode::visibleAnnotations, ClassMergeInfoIds.VISIBLE_ANNOTATIONS)
-        mergeAnnoArrayClassValue(ClassNode::invisibleAnnotations, ClassMergeInfoIds.INVISIBLE_ANNOTATIONS)
-        mergeTypeAnnoArrayClassValue(ClassNode::visibleTypeAnnotations, ClassMergeInfoIds.VISIBLE_TYPE_ANNOTATIONS)
-        mergeTypeAnnoArrayClassValue(ClassNode::invisibleTypeAnnotations, ClassMergeInfoIds.INVISIBLE_TYPE_ANNOTATIONS)
-        mergeInnerClassArrayClassValue(ClassNode::innerClasses, ClassMergeInfoIds.INNER_CLASSES)
-        mergeStringArrayClassValue(ClassNode::nestMembers, ClassMergeInfoIds.INNER_CLASSES)
-        mergeStringArrayClassValue(ClassNode::permittedSubclasses, ClassMergeInfoIds.INNER_CLASSES)
+        val nodes = classes.map { it.node }
+        mergeIntValue(nodes, ClassNode::access, { result.access = it!! }, ClassMergeInfoIds.ACCESS) { it and (Opcodes.ACC_DEPRECATED or Opcodes.ACC_RECORD).inv() }
+        mergeStringValue(nodes, ClassNode::signature, { result.signature = it!! }, ClassMergeInfoIds.SIGNATURE)
+        mergeStringValue(nodes, ClassNode::superName, { result.superName = it!! }, ClassMergeInfoIds.SUPER_NAME)
+        mergeStringArrayValue(nodes, ClassNode::interfaces, { result.interfaces = it?.toList() }, ClassMergeInfoIds.INTERFACES)
+        mergeStringValue(nodes, ClassNode::sourceFile, { result.sourceFile = it!! }, ClassMergeInfoIds.SOURCE_FILE)
+        mergeStringValue(nodes, ClassNode::sourceDebug, { result.sourceDebug = it!! }, ClassMergeInfoIds.SOURCE_DEBUG)
+        mergeStringValue(nodes, ClassNode::outerClass, { result.outerClass = it!! }, ClassMergeInfoIds.OUTER_CLASS)
+        mergeStringValue(nodes, ClassNode::outerMethod, { result.outerMethod = it!! }, ClassMergeInfoIds.OUTER_METHOD)
+        mergeStringValue(nodes, ClassNode::outerMethodDesc, { result.outerMethodDesc = it!! }, ClassMergeInfoIds.OUTER_METHOD_DESC)
+        mergeAnnoArrayValue(nodes, ClassNode::visibleAnnotations, { result.visibleAnnotations = it?.toList() }, ClassMergeInfoIds.VISIBLE_ANNOTATIONS)
+        mergeAnnoArrayValue(nodes, ClassNode::invisibleAnnotations, { result.invisibleAnnotations = it?.toList() }, ClassMergeInfoIds.INVISIBLE_ANNOTATIONS)
+        mergeTypeAnnoArrayValue(nodes, ClassNode::visibleTypeAnnotations, { result.visibleTypeAnnotations = it?.toList() }, ClassMergeInfoIds.VISIBLE_TYPE_ANNOTATIONS)
+        mergeTypeAnnoArrayValue(nodes, ClassNode::invisibleTypeAnnotations, { result.invisibleTypeAnnotations = it?.toList() }, ClassMergeInfoIds.INVISIBLE_TYPE_ANNOTATIONS)
+        mergeInnerClassArrayValue(nodes, ClassNode::innerClasses, { result.innerClasses = it?.toList() }, ClassMergeInfoIds.INNER_CLASSES)
+        mergeStringArrayValue(nodes, ClassNode::nestMembers, { result.nestMembers = it?.toList() }, ClassMergeInfoIds.INNER_CLASSES)
+        mergeStringArrayValue(nodes, ClassNode::permittedSubclasses, { result.permittedSubclasses = it?.toList() }, ClassMergeInfoIds.INNER_CLASSES)
 
         return result
     }
 
     class TestA<T> {
+        fun test() {
+            println(10)
+        }
     }
 
     @Deprecated("")
     private class TestB {
+        fun test() {
+            println(30)
+        }
     }
 
     @JvmStatic
