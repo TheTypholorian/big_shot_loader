@@ -1,15 +1,20 @@
 package net.typho.big_shot.merger
 
 import net.typho.big_shot.data.env.EnvironmentRestriction
+import net.typho.big_shot.merger.AnnotationInfo.Companion.toInfo
 import net.typho.data_util.SingleValueInput.Companion.readVarInt
+import net.typho.data_util.SingleValueOutput.Companion.writeVarInt
 import org.objectweb.asm.Type
 import org.objectweb.asm.TypePath
 import org.objectweb.asm.tree.AnnotationNode
 import org.objectweb.asm.tree.InnerClassNode
 import org.objectweb.asm.tree.TypeAnnotationNode
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.DataInput
 import java.io.DataInputStream
+import java.io.DataOutput
+import java.io.DataOutputStream
 
 @Retention(AnnotationRetention.BINARY)
 internal annotation class InnerClassInfo(
@@ -21,6 +26,9 @@ internal annotation class InnerClassInfo(
     companion object {
         @JvmStatic
         fun InnerClassInfo.toNode() = InnerClassNode(name, outerName.ifEmpty { null }, innerName.ifEmpty { null }, access)
+
+        @JvmStatic
+        fun InnerClassNode.toInfo() = InnerClassInfo(name, outerName ?: "", innerName ?: "", access)
     }
 }
 
@@ -33,6 +41,9 @@ internal annotation class TypeAnnotationInfo(
     companion object {
         @JvmStatic
         fun TypeAnnotationInfo.toNode() = TypeAnnotationNode(typeRef, TypePath.fromString(typePath), anno.desc).also { AnnotationInfo.toNode(it, anno.data) }
+
+        @JvmStatic
+        fun TypeAnnotationNode.toTypeInfo() = TypeAnnotationInfo(typeRef, typePath.toString(), toInfo())
     }
 }
 
@@ -83,8 +94,77 @@ internal annotation class AnnotationInfo(
             }
         }
 
+        internal fun writeValue(output: DataOutput, value: Any?) {
+            when (value) {
+                null -> output.writeByte(NULL.toInt())
+                is Byte -> {
+                    output.writeByte(BYTE.toInt())
+                    output.writeByte(value.toInt())
+                }
+                is Short -> {
+                    output.writeByte(SHORT.toInt())
+                    output.writeShort(value.toInt())
+                }
+                is Int -> {
+                    output.writeByte(INT.toInt())
+                    output.writeInt(value)
+                }
+                is Long -> {
+                    output.writeByte(LONG.toInt())
+                    output.writeLong(value)
+                }
+                is Float -> {
+                    output.writeByte(FLOAT.toInt())
+                    output.writeFloat(value)
+                }
+                is Double -> {
+                    output.writeByte(DOUBLE.toInt())
+                    output.writeDouble(value)
+                }
+                is String -> {
+                    output.writeByte(STRING.toInt())
+                    output.writeUTF(value)
+                }
+                is Type -> {
+                    output.writeByte(TYPE.toInt())
+                    output.writeUTF(value.internalName)
+                }
+                is List<*> -> {
+                    output.writeByte(LIST.toInt())
+                    output.writeVarInt(value.size)
+                    value.forEach { writeValue(output, it) }
+                }
+                is Array<*> -> {
+                    output.writeByte(ARRAY.toInt())
+                    output.writeVarInt(value.size)
+                    value.forEach { writeValue(output, it) }
+                }
+                is AnnotationNode -> {
+                    output.writeByte(ANNO.toInt())
+                    output.write(fromNode(value))
+                }
+                else -> throw IllegalArgumentException()
+            }
+        }
+
+        internal fun fromNode(node: AnnotationNode): ByteArray {
+            val iterator = (node.values ?: return byteArrayOf()).iterator()
+            val bytes = ByteArrayOutputStream()
+            val output = DataOutputStream(bytes)
+
+            while (iterator.hasNext()) {
+                output.writeUTF(iterator.next() as String)
+                writeValue(output, iterator.next())
+            }
+
+            return bytes.toByteArray()
+        }
+
         @JvmStatic
         fun AnnotationInfo.toNode() = AnnotationNode(desc).also { toNode(it, data) }
+
+        @JvmStatic
+        fun AnnotationNode.toInfo() = AnnotationInfo(desc, fromNode(this))
     }
 }
 
