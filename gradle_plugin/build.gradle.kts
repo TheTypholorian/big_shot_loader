@@ -28,8 +28,8 @@ dependencies {
     implementation("org.apache.maven.resolver:maven-resolver-transport-file:2.0.21")
     implementation("org.apache.maven.resolver:maven-resolver-supplier-mvn3:2.0.21")
 
-    implementation("net.typho:asm_util:1.1.2")
-    implementation(project(":data"))
+    implementation("net.typho:asm_util:${rootProject.property("versions.asm_util")}")
+    implementation(project(":data")) // TODO
 }
 
 gradlePlugin {

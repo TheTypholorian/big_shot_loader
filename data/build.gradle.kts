@@ -12,7 +12,8 @@ repositories {
 
 dependencies {
     testImplementation(kotlin("test"))
-    implementation("net.typho:data_util:1.3.2")
+    implementation("net.typho:data_util:${rootProject.property("versions.data_util")}")
+    implementation("org.semver4j:semver4j:6.0.0")
 }
 
 kotlin {

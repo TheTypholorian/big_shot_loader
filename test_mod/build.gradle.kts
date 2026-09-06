@@ -12,7 +12,7 @@ repositories {
 }
 
 dependencies {
-    implementation(project(":loader"))
+    implementation(project(":loader")) // TODO
 }
 
 kotlin {

@@ -15,7 +15,7 @@ dependencies {
     implementation("org.ow2.asm:asm-tree:9.10.1")
     implementation("org.ow2.asm:asm-util:9.10.1")
     implementation("org.ow2.asm:asm-commons:9.10.1")
-    implementation("net.typho:asm_util:1.1.2")
+    implementation("net.typho:asm_util:${rootProject.property("versions.asm_util")}")
 }
 
 kotlin {
