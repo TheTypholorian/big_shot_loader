@@ -6,6 +6,7 @@ import net.typho.big_shot.loader.shaders.bytecode.OP_CONVERT_S_TO_F
 import net.typho.big_shot.loader.shaders.bytecode.OP_F_CONVERT
 import net.typho.big_shot.loader.shaders.bytecode.OP_LOAD
 import net.typho.big_shot.loader.shaders.bytecode.OP_STORE
+import net.typho.big_shot.loader.shaders.bytecode.OP_S_CONVERT
 import net.typho.big_shot.loader.shaders.bytecode.OP_VECTOR_SHUFFLE
 import net.typho.big_shot.loader.shaders.bytecode.ShaderBytecodeType
 import net.typho.big_shot.loader.shaders.bytecode.ShaderConstant
@@ -14,9 +15,8 @@ import net.typho.big_shot.loader.shaders.bytecode.ShaderLabelNode
 import net.typho.big_shot.loader.shaders.reflect.JavaShaderMethodCompiler.StackValue
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.MethodInsnNode
-import java.util.function.Function
 
-open class VectorClassHandler(
+abstract class VectorClassHandler(
     @JvmField
     val mutableClassType: Type,
     @JvmField
@@ -24,15 +24,9 @@ open class VectorClassHandler(
     @JvmField
     val componentType: Type,
     @JvmField
-    val zero: ShaderConstant,
-    @JvmField
-    val one: ShaderConstant,
-    @JvmField
     val mutable: Boolean,
     @JvmField
-    val type: ShaderBytecodeType.Vector,
-    @JvmField
-    vararg val extraConstructorTypes: Pair<VectorClassHandler, Int>
+    val type: ShaderBytecodeType.Vector
 ) : JavaShaderClassHandler {
     object Double2 : DoubleVector(Type.getType("Lorg/joml/Vector2d;"), Type.getType("Lorg/joml/Vector2dc;"), true, ShaderBytecodeType.VECTOR2D)
     object Double3 : DoubleVector(Type.getType("Lorg/joml/Vector3d;"), Type.getType("Lorg/joml/Vector3dc;"), true, ShaderBytecodeType.VECTOR3D)
@@ -66,7 +60,7 @@ open class VectorClassHandler(
     object Int3c : IntVector(Type.getType("Lorg/joml/Vector3i;"), Type.getType("Lorg/joml/Vector3ic;"), false, ShaderBytecodeType.VECTOR3I)
     object Int4c : IntVector(Type.getType("Lorg/joml/Vector4i;"), Type.getType("Lorg/joml/Vector4ic;"), false, ShaderBytecodeType.VECTOR4I)
 
-    companion object : Function<String, VectorClassHandler?> {
+    companion object : JavaShaderClassHandler.Supplier {
         @JvmStatic
         fun getDouble(count: Int) = when (count) {
             2 -> Double2
@@ -131,7 +125,7 @@ open class VectorClassHandler(
             else -> throw IllegalArgumentException(count.toString())
         }
 
-        override fun apply(className: String): VectorClassHandler? {
+        override fun getClassHandler(className: String): JavaShaderClassHandler? {
             return when (className) {
                 "org/joml/Vector2d" -> Double2
                 "org/joml/Vector3d" -> Double3
@@ -212,42 +206,95 @@ open class VectorClassHandler(
         compiler: JavaShaderMethodCompiler,
         call: MethodInsnNode
     ) {
-        fun error() {
-            throw JavaShaderCompilationException("Unsupported method ${call.owner}.${call.name}${call.desc}")
+        val success = when (call.name) {
+            "<init>" -> handleConstructor(compiler, call.desc)
+            else -> false
         }
 
-        when (call.name) {
-            "<init>" -> {
-                when (call.desc) {
-                    "()V" -> compiler.vectorInit(type, StackValue.Label(compiler.parent.builder.getConstant(zero)))
-                    voidSinglePrimDesc -> compiler.vectorInit(type, *compiler.stack.popSingleVectorComponent(type))
-                    voidPrimDesc -> compiler.vectorInit(type, *compiler.stack.popVectorComponents(type))
-                    voidImmutableDesc -> compiler.vectorInit(type, compiler.stack.pop() as StackValue.Labeled)
-                    voidPrimArrayDesc -> {
-                        val array = compiler.stack.pop() as StackValue.LoadVariable
-                        val components = Array(type.componentCount) { index ->
-                            val pointer = ShaderLabelNode()
-                            val value = ShaderLabelNode()
-                            compiler.function.instructions.add(ShaderInsnNode(OP_ACCESS_CHAIN, array.variable.type, pointer, array.variable.label, index))
-                            compiler.function.instructions.add(ShaderInsnNode(OP_LOAD, array.variable.type.type.rootType, value, pointer))
-                            StackValue.Label(value)
+        if (!success) {
+            throw JavaShaderCompilationException("Unsupported method ${call.owner}.${call.name}${call.desc}")
+        }
+    }
+
+    protected open fun noArgVector(compiler: JavaShaderMethodCompiler) {
+        val zero = StackValue.Label(compiler.parent.builder.getConstant((type.componentType as ShaderBytecodeType.Numerical).getConstant(0)))
+
+        if (type.componentCount == 4) {
+            val one = StackValue.Label(compiler.parent.builder.getConstant(type.componentType.getConstant(1)))
+            compiler.vectorInit(type, zero, zero, zero, one)
+        } else {
+            compiler.vectorInit(type, zero)
+        }
+    }
+
+    protected abstract fun cast(compiler: JavaShaderMethodCompiler, arg: Type, input: StackValue.Labeled, type: ShaderBytecodeType.Vector): StackValue.Labeled?
+
+    protected open fun handleConstructor(compiler: JavaShaderMethodCompiler, desc: String): Boolean {
+        when (desc) {
+            "()V" -> noArgVector(compiler)
+            voidSinglePrimDesc -> compiler.vectorInit(type, *compiler.stack.popSingleVectorComponent(type))
+            voidPrimDesc -> compiler.vectorInit(type, *compiler.stack.popVectorComponents(type))
+            voidImmutableDesc -> compiler.vectorInit(type, compiler.stack.pop() as StackValue.Labeled)
+            voidPrimArrayDesc -> {
+                val array = compiler.stack.pop() as StackValue.LoadVariable
+                val components = Array(type.componentCount) { index ->
+                    val pointer = ShaderLabelNode()
+                    val value = ShaderLabelNode()
+                    compiler.function.instructions.add(ShaderInsnNode(OP_ACCESS_CHAIN, array.variable.type, pointer, array.variable.label, index))
+                    compiler.function.instructions.add(ShaderInsnNode(OP_LOAD, array.variable.type.type.rootType, value, pointer))
+                    StackValue.Label(value)
+                }
+                compiler.vectorInit(type, *components)
+            }
+            else -> {
+                val args = Type.getArgumentTypes(desc)
+
+                when (args.size) {
+                    1 -> {
+                        if (type.componentCount == 2) {
+                            when (args[0]) {
+                                Double3c.classType, Float3c.classType, Int3c.classType -> {
+                                    val targetLabel = ShaderLabelNode()
+                                    compiler.function.instructions.add(ShaderInsnNode(OP_VECTOR_SHUFFLE, type, targetLabel, (compiler.stack.pop() as StackValue.Labeled).label, 0, 1))
+                                    compiler.vectorInit(type, StackValue.Label(targetLabel))
+                                    return true
+                                }
+                            }
                         }
-                        compiler.vectorInit(type, *components)
+
+                        val input = compiler.stack.pop() as StackValue.Labeled
+                        val processed = cast(compiler, args[0], input, type) ?: return false
+                        compiler.vectorInit(type, processed)
+                        return true
                     }
-                    else -> {
-                        if (!handleExtraConstructor(compiler, call)) {
-                            error()
+                    2 -> {
+                        if (args[1] == componentType && type.componentCount > 2) {
+                            val z = compiler.stack.pop() as StackValue.Labeled
+                            val xy = compiler.stack.pop() as StackValue.Labeled
+
+                            val processed = cast(compiler, args[0], xy, type.copy(componentCount = type.componentCount - 1)) ?: return false
+                            compiler.vectorInit(type, processed, z)
+                            return true
+                        }
+                    }
+                    3 -> {
+                        if (args[1] == componentType && args[2] == componentType && type.componentCount > 3) {
+                            val w = compiler.stack.pop() as StackValue.Labeled
+                            val z = compiler.stack.pop() as StackValue.Labeled
+                            val xy = compiler.stack.pop() as StackValue.Labeled
+
+                            val processed = cast(compiler, args[0], xy, type.copy(componentCount = type.componentCount - 2)) ?: return false
+                            compiler.vectorInit(type, processed, z, w)
+                            return true
                         }
                     }
                 }
+
+                return false
             }
         }
 
-        error()
-    }
-
-    protected open fun handleExtraConstructor(compiler: JavaShaderMethodCompiler, call: MethodInsnNode): Boolean {
-        return false
+        return true
     }
 
     open class DoubleVector(
@@ -255,7 +302,23 @@ open class VectorClassHandler(
         immutableClassType: Type,
         mutable: Boolean,
         type: ShaderBytecodeType.Vector
-    ) : VectorClassHandler(mutableClassType, immutableClassType, Type.DOUBLE_TYPE, ShaderConstant(ShaderBytecodeType.DOUBLE, 0.0), ShaderConstant(ShaderBytecodeType.DOUBLE, 1.0), mutable, type) {
+    ) : VectorClassHandler(mutableClassType, immutableClassType, Type.DOUBLE_TYPE, mutable, type) {
+        override fun cast(
+            compiler: JavaShaderMethodCompiler,
+            arg: Type,
+            input: StackValue.Labeled,
+            type: ShaderBytecodeType.Vector
+        ): StackValue.Labeled? {
+            return when (arg) {
+                getDoublec(type.componentCount).classType -> input
+                getIntc(type.componentCount).classType -> {
+                    val targetLabel = ShaderLabelNode()
+                    compiler.function.instructions.add(ShaderInsnNode(OP_CONVERT_S_TO_F, type, targetLabel, input.label))
+                    StackValue.Label(targetLabel)
+                }
+                else -> null
+            }
+        }
     }
 
     open class FloatVector(
@@ -263,82 +326,27 @@ open class VectorClassHandler(
         immutableClassType: Type,
         mutable: Boolean,
         type: ShaderBytecodeType.Vector
-    ) : VectorClassHandler(mutableClassType, immutableClassType, Type.FLOAT_TYPE, ShaderConstant(ShaderBytecodeType.FLOAT, 0f), ShaderConstant(ShaderBytecodeType.FLOAT, 1f), mutable, type) {
-        override fun handleExtraConstructor(compiler: JavaShaderMethodCompiler, call: MethodInsnNode): Boolean {
-            val args = Type.getArgumentTypes(call.desc)
-
-            when (args.size) {
-                1 -> {
-                    if (type.componentCount == 2) {
-                        when (args[0]) {
-                            Double3c.classType, Float3c.classType, Int3c.classType -> {
-                                val targetLabel = ShaderLabelNode()
-                                compiler.function.instructions.add(ShaderInsnNode(OP_VECTOR_SHUFFLE, type, targetLabel, (compiler.stack.pop() as StackValue.Labeled).label, 0, 1))
-                                compiler.vectorInit(type, StackValue.Label(targetLabel))
-                                return true
-                            }
-                        }
-                    }
-
-                    val opcode = when (args[0]) {
-                        getDoublec(type.componentCount).classType -> OP_F_CONVERT
-                        getIntc(type.componentCount).classType -> OP_CONVERT_S_TO_F
-                        else -> return false
-                    }
+    ) : VectorClassHandler(mutableClassType, immutableClassType, Type.FLOAT_TYPE, mutable, type) {
+        override fun cast(
+            compiler: JavaShaderMethodCompiler,
+            arg: Type,
+            input: StackValue.Labeled,
+            type: ShaderBytecodeType.Vector
+        ): StackValue.Labeled? {
+            return when (arg) {
+                getFloatc(type.componentCount).classType -> input
+                getDoublec(type.componentCount).classType -> {
                     val targetLabel = ShaderLabelNode()
-                    compiler.function.instructions.add(ShaderInsnNode(opcode, type, targetLabel, (compiler.stack.pop() as StackValue.Labeled).label))
-                    compiler.vectorInit(type, StackValue.Label(targetLabel))
-                    return true
+                    compiler.function.instructions.add(ShaderInsnNode(OP_F_CONVERT, type, targetLabel, input.label))
+                    StackValue.Label(targetLabel)
                 }
-                2 -> {
-                    if (args[1] == componentType && type.componentCount > 2) {
-                        val z = compiler.stack.pop() as StackValue.Labeled
-                        val xy = compiler.stack.pop() as StackValue.Labeled
-
-                        val first = when (args[0]) {
-                            getFloatc(type.componentCount - 1).classType, immutableClassType -> xy
-                            getDoublec(type.componentCount - 1).classType -> {
-                                val targetLabel = ShaderLabelNode()
-                                compiler.function.instructions.add(ShaderInsnNode(OP_F_CONVERT, type, targetLabel, xy.label))
-                                StackValue.Label(targetLabel)
-                            }
-                            getIntc(type.componentCount - 1).classType -> {
-                                val targetLabel = ShaderLabelNode()
-                                compiler.function.instructions.add(ShaderInsnNode(OP_CONVERT_S_TO_F, type, targetLabel, xy.label))
-                                StackValue.Label(targetLabel)
-                            }
-                            else -> return false
-                        }
-                        compiler.vectorInit(type, first, z)
-                        return true
-                    }
+                getIntc(type.componentCount).classType -> {
+                    val targetLabel = ShaderLabelNode()
+                    compiler.function.instructions.add(ShaderInsnNode(OP_CONVERT_S_TO_F, type, targetLabel, input.label))
+                    StackValue.Label(targetLabel)
                 }
-                3 -> {
-                    if (args[1] == componentType && args[2] == componentType && type.componentCount > 3) {
-                        val z = compiler.stack.pop() as StackValue.Labeled
-                        val xy = compiler.stack.pop() as StackValue.Labeled
-
-                        val first = when (args[0]) {
-                            getFloatc(type.componentCount - 2).classType, immutableClassType -> xy
-                            getDoublec(type.componentCount - 2).classType -> {
-                                val targetLabel = ShaderLabelNode()
-                                compiler.function.instructions.add(ShaderInsnNode(OP_F_CONVERT, type, targetLabel, xy.label))
-                                StackValue.Label(targetLabel)
-                            }
-                            getIntc(type.componentCount - 2).classType -> {
-                                val targetLabel = ShaderLabelNode()
-                                compiler.function.instructions.add(ShaderInsnNode(OP_CONVERT_S_TO_F, type, targetLabel, xy.label))
-                                StackValue.Label(targetLabel)
-                            }
-                            else -> return false
-                        }
-                        compiler.vectorInit(type, first, z)
-                        return true
-                    }
-                }
+                else -> null
             }
-
-            return false
         }
     }
 
@@ -347,7 +355,23 @@ open class VectorClassHandler(
         immutableClassType: Type,
         mutable: Boolean,
         type: ShaderBytecodeType.Vector
-    ) : VectorClassHandler(mutableClassType, immutableClassType, Type.LONG_TYPE, ShaderConstant(ShaderBytecodeType.LONG, 0L), ShaderConstant(ShaderBytecodeType.LONG, 1L), mutable, type) {
+    ) : VectorClassHandler(mutableClassType, immutableClassType, Type.LONG_TYPE, mutable, type) {
+        override fun cast(
+            compiler: JavaShaderMethodCompiler,
+            arg: Type,
+            input: StackValue.Labeled,
+            type: ShaderBytecodeType.Vector
+        ): StackValue.Labeled? {
+            return when (arg) {
+                getLongc(type.componentCount).classType -> input
+                getIntc(type.componentCount).classType -> {
+                    val targetLabel = ShaderLabelNode()
+                    compiler.function.instructions.add(ShaderInsnNode(OP_S_CONVERT, type, targetLabel, input.label))
+                    StackValue.Label(targetLabel)
+                }
+                else -> null
+            }
+        }
     }
 
     open class IntVector(
@@ -355,26 +379,17 @@ open class VectorClassHandler(
         immutableClassType: Type,
         mutable: Boolean,
         type: ShaderBytecodeType.Vector
-    ) : VectorClassHandler(mutableClassType, immutableClassType, Type.INT_TYPE, ShaderConstant(ShaderBytecodeType.INT, 0), ShaderConstant(ShaderBytecodeType.INT, 1), mutable, type) {
+    ) : VectorClassHandler(mutableClassType, immutableClassType, Type.INT_TYPE, mutable, type) {
+        override fun cast(
+            compiler: JavaShaderMethodCompiler,
+            arg: Type,
+            input: StackValue.Labeled,
+            type: ShaderBytecodeType.Vector
+        ): StackValue.Labeled? {
+            return when (arg) {
+                getIntc(type.componentCount).classType -> input
+                else -> null
+            }
+        }
     }
-
-    /*
-
-                        val args = Type.getArgumentTypes(call.desc)
-
-                        if (args.size == 1) {
-                            val arg = args[0]
-
-                            if (arg.sort == Type.OBJECT) {
-                                for ((type, opcode) in extraConstructorTypes) {
-                                    if (type.classType == arg) {
-                                        val targetLabel = ShaderLabelNode()
-                                        compiler.function.instructions.add(ShaderInsnNode(opcode, type.type, targetLabel, (compiler.stack.pop() as StackValue.Labeled).label))
-                                        compiler.vectorInit(type.type, StackValue.Label(targetLabel))
-                                        break
-                                    }
-                                }
-                            }
-                        }
-     */
 }

@@ -247,20 +247,6 @@ class JavaShaderMethodCompiler(
                             continue
                         }
 
-                        when (insn.owner) {
-                            "kotlin/jvm/internal/Intrinsics" -> {
-                                repeat(Type.getArgumentCount(insn.desc)) {
-                                    stack.pop()
-                                }
-
-                                if (insn.opcode != Opcodes.INVOKESTATIC) {
-                                    stack.pop()
-                                }
-
-                                continue
-                            }
-                        }
-
                         TODO()
                     }
                     is LdcInsnNode -> {
@@ -329,37 +315,29 @@ class JavaShaderMethodCompiler(
                     is FieldInsnNode -> {
                         when (insn.opcode) {
                             Opcodes.GETFIELD -> {
-                                val name = AttributeName(insn.owner, insn.name, insn.desc)
+                                val target = stack.pop()
 
-                                parent.variables[name]?.let { v ->
-                                    val target = stack.pop()
-
-                                    if (target != StackValue.This) {
-                                        TODO()
+                                if (target == StackValue.This) {
+                                    parent.variables[insn.name]?.let { v ->
+                                        stack.push(StackValue.LoadVariable(this, v))
+                                        continue
                                     }
-
-                                    stack.push(StackValue.LoadVariable(this, v))
-                                    continue
                                 }
 
-                                TODO("$name")
+                                TODO("${insn.owner} ${insn.name} ${insn.desc}")
                             }
                             Opcodes.PUTFIELD -> {
-                                val name = AttributeName(insn.owner, insn.name, insn.desc)
+                                val value = stack.pop()
+                                val target = stack.pop()
 
-                                parent.variables[name]?.let { v ->
-                                    val value = stack.pop()
-                                    val target = stack.pop()
-
-                                    if (target != StackValue.This || value == StackValue.This) {
-                                        TODO()
+                                if (target == StackValue.This) {
+                                    parent.variables[insn.name]?.let { v ->
+                                        add(ShaderInsnNode(OP_STORE, v.label, (value as StackValue.Labeled).label))
+                                        continue
                                     }
-
-                                    add(ShaderInsnNode(OP_STORE, v.label, (value as StackValue.Labeled).label))
-                                    continue
                                 }
 
-                                TODO("$name")
+                                TODO("${insn.owner} ${insn.name} ${insn.desc}")
                             }
                         }
                     }

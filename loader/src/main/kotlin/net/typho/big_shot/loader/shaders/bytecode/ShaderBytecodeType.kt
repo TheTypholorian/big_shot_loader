@@ -105,6 +105,10 @@ sealed interface ShaderBytecodeType {
         return builder.types.computeIfAbsent(this) { createLabelNode() }
     }
 
+    interface Numerical : ShaderBytecodeType {
+        fun getConstant(value: Number): ShaderConstant
+    }
+
     object Void : ShaderBytecodeType {
         override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_VOID, result)
@@ -130,7 +134,11 @@ sealed interface ShaderBytecodeType {
         val width: Int,
         @JvmField
         val signed: Boolean
-    ) : ShaderBytecodeType {
+    ) : Numerical {
+        override fun getConstant(value: Number): ShaderConstant {
+            return ShaderConstant(this, if (width > 32) value.toLong() else value.toInt())
+        }
+
         override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_INT, result, width, if (signed) 1 else 0)
         }
@@ -150,7 +158,11 @@ sealed interface ShaderBytecodeType {
     data class Float(
         @JvmField
         val width: Int
-    ) : ShaderBytecodeType {
+    ) : Numerical {
+        override fun getConstant(value: Number): ShaderConstant {
+            return ShaderConstant(this, if (width > 32) value.toDouble() else value.toFloat())
+        }
+
         override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_FLOAT, result, width)
         }

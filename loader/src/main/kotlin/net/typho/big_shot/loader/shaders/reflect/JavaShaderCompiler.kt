@@ -11,7 +11,7 @@ import java.util.function.Function
 class JavaShaderCompiler(
     @JvmField
     val node: ClassNode
-) {
+) : JavaShaderClassHandler.Supplier {
     @JvmField
     val builder = ShaderBytecodeBuilder(
         when (node.superName) {
@@ -23,11 +23,11 @@ class JavaShaderCompiler(
         }
     )
     @JvmField
-    val classHandlers = mutableListOf<Function<String, out JavaShaderClassHandler?>>(VectorClassHandler)
+    val classHandlers = mutableListOf(VectorClassHandler, KotlinIntrinsicsClassHandler)
     @JvmField
-    val variables = mutableMapOf<AttributeName, ShaderVariable>()
+    val variables = mutableMapOf<String, ShaderVariable>()
 
-    fun getClassHandler(className: String) = classHandlers.firstNotNullOfOrNull { it.apply(className) }
+    override fun getClassHandler(className: String) = classHandlers.firstNotNullOfOrNull { it.getClassHandler(className) }
 
     fun compileMethod(node: MethodNode): ShaderFunction {
         val compiler = JavaShaderMethodCompiler(this, node)
@@ -80,7 +80,7 @@ class JavaShaderCompiler(
             val field = compileField(it)
 
             if (field != null) {
-                variables[AttributeName(node.name, it.name, it.desc)] = field
+                variables[it.name] = field
             }
 
             field
