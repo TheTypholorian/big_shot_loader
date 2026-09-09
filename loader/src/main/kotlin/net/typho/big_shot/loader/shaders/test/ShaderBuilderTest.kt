@@ -4,6 +4,7 @@ import net.typho.big_shot.loader.shaders.ShaderType
 import net.typho.big_shot.loader.shaders.bytecode.ShaderBytecodeType
 import net.typho.big_shot.loader.shaders.bytecode.ShaderBytecodeUtils
 import net.typho.big_shot.loader.shaders.reflect.JavaShaderCompiler
+import org.joml.Vector3d
 import org.joml.Vector3f
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.Opcodes
@@ -69,7 +70,7 @@ object ShaderBuilderTest {
 
         val shader = TestVertexShader()
         shader.pos = Vector3f(1f, 2f, 3f)
-        shader.pos2 = Vector3f(-10f, -5f, 20f)
+        shader.pos2 = Vector3d(-10.0, -5.0, 20.0)
         shader.main()
         println("output: ${Vector3f(shader.outPos).toString(NumberFormat.getInstance())}")
 
@@ -77,7 +78,7 @@ object ShaderBuilderTest {
         val node = ClassNode()
         reader.accept(node, 0)
 
-        val buffer = JavaShaderCompiler.compile(node)
+        val buffer = JavaShaderCompiler(node).compile()
 
         val array = ByteArray(buffer.limit())
         buffer.get(0, array)
