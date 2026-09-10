@@ -9,7 +9,7 @@ import org.objectweb.asm.tree.MethodInsnNode
 interface JavaShaderTypeHandler {
     fun handleMethodCall(compiler: JavaShaderMethodCompiler, call: MethodInsnNode)
 
-    fun createLocalVariable(compiler: JavaShaderMethodCompiler, id: Int, local: LocalVariableNode, javaType: Type, type: ShaderBytecodeType): ShaderVariable? {
+    fun createLocalVariable(compiler: JavaShaderMethodCompiler, local: LocalVariableNode, javaType: Type, type: ShaderBytecodeType): ShaderVariable? {
         return null
     }
 

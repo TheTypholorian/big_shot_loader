@@ -136,7 +136,7 @@ sealed interface ShaderBytecodeType {
         val signed: Boolean
     ) : Numerical {
         override fun getConstant(value: Number): ShaderConstant {
-            return ShaderConstant(this, if (width > 32) value.toLong() else value.toInt())
+            return ShaderConstant(this, listOf(if (width > 32) value.toLong() else value.toInt()))
         }
 
         override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
@@ -160,7 +160,7 @@ sealed interface ShaderBytecodeType {
         val width: Int
     ) : Numerical {
         override fun getConstant(value: Number): ShaderConstant {
-            return ShaderConstant(this, if (width > 32) value.toDouble() else value.toFloat())
+            return ShaderConstant(this, listOf(if (width > 32) value.toDouble() else value.toFloat()))
         }
 
         override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
@@ -243,7 +243,7 @@ sealed interface ShaderBytecodeType {
             get() = elementType.rootType
 
         override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
-            return length?.let { ShaderInsnNode(OP_TYPE_ARRAY, result, elementType, builder.getConstant(ShaderConstant(INT, it))) } ?: ShaderInsnNode(OP_TYPE_RUNTIME_ARRAY, result, elementType)
+            return length?.let { ShaderInsnNode(OP_TYPE_ARRAY, result, elementType, builder.getConstant(ShaderConstant(INT, listOf(it)))) } ?: ShaderInsnNode(OP_TYPE_RUNTIME_ARRAY, result, elementType)
         }
 
         override fun toString(): String {

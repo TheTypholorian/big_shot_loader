@@ -67,7 +67,7 @@ class JavaShaderCompiler(
         type ?: return null
         val shaderType = ShaderBytecodeType.convertJavaType(type)
 
-        return ShaderVariable(ShaderBytecodeType.Pointer(storageClass, shaderType), restricted = shaderType is ShaderBytecodeType.Vector, javaType = type, label = ShaderLabelNode(name), location = location)
+        return ShaderVariable(ShaderBytecodeType.Pointer(storageClass, shaderType), javaType = type, label = ShaderLabelNode(name), location = location)
     }
 
     fun compile(): ByteBuffer {

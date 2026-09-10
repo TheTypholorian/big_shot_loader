@@ -8,8 +8,6 @@ data class ShaderVariable @JvmOverloads constructor(
     @JvmField
     val label: ShaderLabelNode = ShaderLabelNode(),
     @JvmField
-    val restricted: Boolean = false,
-    @JvmField
     val javaType: Type? = null,
     @JvmField
     val initializer: ShaderLabelNode? = null,

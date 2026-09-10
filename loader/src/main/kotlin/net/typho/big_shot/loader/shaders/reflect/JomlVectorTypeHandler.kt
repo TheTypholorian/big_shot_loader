@@ -2,11 +2,9 @@ package net.typho.big_shot.loader.shaders.reflect
 
 import net.typho.big_shot.loader.shaders.bytecode.*
 import net.typho.big_shot.loader.shaders.reflect.JavaShaderMethodCompiler.StackValue
-import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.LocalVariableNode
 import org.objectweb.asm.tree.MethodInsnNode
-import org.objectweb.asm.tree.VarInsnNode
 
 abstract class JomlVectorTypeHandler(
     @JvmField
@@ -147,9 +145,9 @@ abstract class JomlVectorTypeHandler(
             }
         }
 
-        fun JavaShaderMethodCompiler.createVector(type: ShaderBytecodeType.Vector, vararg values: StackValue.Labeled): ShaderLabelNode {
+        fun JavaShaderMethodCompiler.createVector(type: ShaderBytecodeType.Vector, vararg values: StackValue): ShaderLabelNode {
             return if (values.all { it is StackValue.Constant }) {
-                parent.builder.getConstant(ShaderConstant(type, values.map { it.label }))
+                parent.builder.getConstant(ShaderConstant(type, values.map { it.label!! }))
             } else {
                 val result = ShaderLabelNode()
                 function.instructions.add(ShaderInsnNode(OP_COMPOSITE_CONSTRUCT, type, result, values.map { it.label }))
@@ -167,22 +165,16 @@ abstract class JomlVectorTypeHandler(
         }
 
         fun JavaShaderMethodCompiler.vectorOp(opcode: Int, type: ShaderBytecodeType.Vector, dest: StackValue, add: ShaderLabelNode, self: ShaderLabelNode) {
-            if (dest is StackValue.LoadVariable && dest.variable.restricted) {
-                throw JavaShaderCompilationException("Used a restricted variable '${dest.variable.label.name}' as a destination for a joml operation. Since shader objects are immutable while joml objects are mutable, a joml variable must either be given a new instance every store, or be final and only be modified as a destination for vector operations.")
-            }
-
             val result = ShaderLabelNode()
             function.instructions.add(ShaderInsnNode(opcode, type, result, self, add))
             vectorStoreLoad(result, dest)
         }
 
-        fun JavaShaderMethodCompiler.vectorOpSelf(opcode: Int, type: ShaderBytecodeType.Vector, add: ShaderLabelNode, self: StackValue.Labeled) {
-            val result = ShaderLabelNode()
-            function.instructions.add(ShaderInsnNode(opcode, type, result, self.label, add))
-            vectorStoreLoad(result, self)
+        fun JavaShaderMethodCompiler.vectorOpSelf(opcode: Int, type: ShaderBytecodeType.Vector, add: ShaderLabelNode, self: StackValue) {
+            vectorOp(opcode, type, self, add, self.label!!)
         }
 
-        fun JavaShaderMethodCompiler.vectorInit(type: ShaderBytecodeType.Vector, vararg values: StackValue.Labeled) {
+        fun JavaShaderMethodCompiler.vectorInit(type: ShaderBytecodeType.Vector, vararg values: StackValue) {
             val vec = createVector(type, *values)
             val self = stack.pop() as StackValue.NewObject
             stack.replace(self, StackValue.Label(vec))
@@ -234,40 +226,22 @@ abstract class JomlVectorTypeHandler(
 
     override fun createLocalVariable(
         compiler: JavaShaderMethodCompiler,
-        id: Int,
         local: LocalVariableNode,
         javaType: Type,
         type: ShaderBytecodeType
     ): ShaderVariable? {
-        var restricted = false
-
-        if (mutable) {
-            var used = false
-
-            for (insn in compiler.node.instructions) {
-                if (insn is VarInsnNode && insn.`var` == id && insn.opcode == Opcodes.ASTORE) {
-                    if (used) {
-                        restricted = true
-                        break
-                    } else {
-                        used = true
-                    }
-                }
-            }
-        }
-
-        return ShaderVariable(ShaderBytecodeType.Pointer(STORAGE_CLASS_FUNCTION, type), ShaderLabelNode(local.name), restricted = restricted, javaType = javaType)
+        return null
     }
 
     protected open fun handleSimpleOp(compiler: JavaShaderMethodCompiler, opcode: Int, desc: String): Boolean {
         when (desc) {
-            opSinglePrimDestDesc -> compiler.vectorOp(opcode, type, compiler.stack.pop(), compiler.createVector(type, *compiler.stack.popSingleVectorComponent(type)), (compiler.stack.pop() as StackValue.Labeled).label)
-            opPrimDestDesc -> compiler.vectorOp(opcode, type, compiler.stack.pop(), compiler.createVector(type, *compiler.stack.popVectorComponents(type)), (compiler.stack.pop() as StackValue.Labeled).label)
-            opImmutableDestDesc -> compiler.vectorOp(opcode, type, compiler.stack.pop(), (compiler.stack.pop() as StackValue.Labeled).label, (compiler.stack.pop() as StackValue.Labeled).label)
+            opSinglePrimDestDesc -> compiler.vectorOp(opcode, type, compiler.stack.pop(), compiler.createVector(type, *compiler.stack.popSingleVectorComponent(type)), compiler.stack.pop().label!!)
+            opPrimDestDesc -> compiler.vectorOp(opcode, type, compiler.stack.pop(), compiler.createVector(type, *compiler.stack.popVectorComponents(type)), compiler.stack.pop().label!!)
+            opImmutableDestDesc -> compiler.vectorOp(opcode, type, compiler.stack.pop(), compiler.stack.pop().label!!, compiler.stack.pop().label!!)
 
-            opSinglePrimSelfDesc -> compiler.vectorOpSelf(opcode, type, compiler.createVector(type, *compiler.stack.popSingleVectorComponent(type)), compiler.stack.pop() as StackValue.Labeled)
-            opPrimSelfDesc -> compiler.vectorOpSelf(opcode, type, compiler.createVector(type, *compiler.stack.popVectorComponents(type)), compiler.stack.pop() as StackValue.Labeled)
-            opImmutableSelfDesc -> compiler.vectorOpSelf(opcode, type, (compiler.stack.pop() as StackValue.Labeled).label, compiler.stack.pop() as StackValue.Labeled)
+            opSinglePrimSelfDesc -> compiler.vectorOpSelf(opcode, type, compiler.createVector(type, *compiler.stack.popSingleVectorComponent(type)), compiler.stack.pop())
+            opPrimSelfDesc -> compiler.vectorOpSelf(opcode, type, compiler.createVector(type, *compiler.stack.popVectorComponents(type)), compiler.stack.pop())
+            opImmutableSelfDesc -> compiler.vectorOpSelf(opcode, type, compiler.stack.pop().label!!, compiler.stack.pop())
 
             else -> return false
         }
@@ -286,14 +260,14 @@ abstract class JomlVectorTypeHandler(
         }
     }
 
-    protected abstract fun castConstructorType(compiler: JavaShaderMethodCompiler, arg: Type, input: StackValue.Labeled, type: ShaderBytecodeType.Vector): StackValue.Labeled?
+    protected abstract fun castConstructorType(compiler: JavaShaderMethodCompiler, arg: Type, input: StackValue, type: ShaderBytecodeType.Vector): StackValue?
 
     protected open fun handleConstructor(compiler: JavaShaderMethodCompiler, desc: String): Boolean {
         when (desc) {
             "()V" -> handleNoArgVector(compiler)
             voidSinglePrimDesc -> compiler.vectorInit(type, *compiler.stack.popSingleVectorComponent(type))
             voidPrimDesc -> compiler.vectorInit(type, *compiler.stack.popVectorComponents(type))
-            voidImmutableDesc -> compiler.vectorInit(type, compiler.stack.pop() as StackValue.Labeled)
+            voidImmutableDesc -> compiler.vectorInit(type, compiler.stack.pop())
             voidPrimArrayDesc -> {
                 val array = compiler.stack.pop() as StackValue.LoadVariable
                 val components = Array(type.componentCount) { index ->
@@ -314,22 +288,22 @@ abstract class JomlVectorTypeHandler(
                             when (args[0]) {
                                 Double3c.classType, Float3c.classType, Int3c.classType -> { // TODO abstractify
                                     val targetLabel = ShaderLabelNode()
-                                    compiler.function.instructions.add(ShaderInsnNode(OP_VECTOR_SHUFFLE, type, targetLabel, (compiler.stack.pop() as StackValue.Labeled).label, 0, 1))
+                                    compiler.function.instructions.add(ShaderInsnNode(OP_VECTOR_SHUFFLE, type, targetLabel, compiler.stack.pop().label!!, 0, 1))
                                     compiler.vectorInit(type, StackValue.Label(targetLabel))
                                     return true
                                 }
                             }
                         }
 
-                        val input = compiler.stack.pop() as StackValue.Labeled
+                        val input = compiler.stack.pop()
                         val processed = castConstructorType(compiler, args[0], input, type) ?: return false
                         compiler.vectorInit(type, processed)
                         return true
                     }
                     2 -> {
                         if (args[1] == componentType && type.componentCount > 2) {
-                            val z = compiler.stack.pop() as StackValue.Labeled
-                            val xy = compiler.stack.pop() as StackValue.Labeled
+                            val z = compiler.stack.pop()
+                            val xy = compiler.stack.pop()
 
                             val processed = castConstructorType(compiler, args[0], xy, type.copy(componentCount = type.componentCount - 1)) ?: return false
                             compiler.vectorInit(type, processed, z)
@@ -338,9 +312,9 @@ abstract class JomlVectorTypeHandler(
                     }
                     3 -> {
                         if (args[1] == componentType && args[2] == componentType && type.componentCount > 3) {
-                            val w = compiler.stack.pop() as StackValue.Labeled
-                            val z = compiler.stack.pop() as StackValue.Labeled
-                            val xy = compiler.stack.pop() as StackValue.Labeled
+                            val w = compiler.stack.pop()
+                            val z = compiler.stack.pop()
+                            val xy = compiler.stack.pop()
 
                             val processed = castConstructorType(compiler, args[0], xy, type.copy(componentCount = type.componentCount - 2)) ?: return false
                             compiler.vectorInit(type, processed, z, w)
@@ -365,9 +339,9 @@ abstract class JomlVectorTypeHandler(
         override fun castConstructorType(
             compiler: JavaShaderMethodCompiler,
             arg: Type,
-            input: StackValue.Labeled,
+            input: StackValue,
             type: ShaderBytecodeType.Vector
-        ): StackValue.Labeled? {
+        ): StackValue? {
             return when (arg) {
                 getDoublec(type.componentCount).classType -> input
                 getIntc(type.componentCount).classType -> {
@@ -389,9 +363,9 @@ abstract class JomlVectorTypeHandler(
         override fun castConstructorType(
             compiler: JavaShaderMethodCompiler,
             arg: Type,
-            input: StackValue.Labeled,
+            input: StackValue,
             type: ShaderBytecodeType.Vector
-        ): StackValue.Labeled? {
+        ): StackValue? {
             return when (arg) {
                 getFloatc(type.componentCount).classType -> input
                 getDoublec(type.componentCount).classType -> {
@@ -418,9 +392,9 @@ abstract class JomlVectorTypeHandler(
         override fun castConstructorType(
             compiler: JavaShaderMethodCompiler,
             arg: Type,
-            input: StackValue.Labeled,
+            input: StackValue,
             type: ShaderBytecodeType.Vector
-        ): StackValue.Labeled? {
+        ): StackValue? {
             return when (arg) {
                 getLongc(type.componentCount).classType -> input
                 getIntc(type.componentCount).classType -> {
@@ -442,9 +416,9 @@ abstract class JomlVectorTypeHandler(
         override fun castConstructorType(
             compiler: JavaShaderMethodCompiler,
             arg: Type,
-            input: StackValue.Labeled,
+            input: StackValue,
             type: ShaderBytecodeType.Vector
-        ): StackValue.Labeled? {
+        ): StackValue? {
             return when (arg) {
                 getIntc(type.componentCount).classType -> input
                 else -> null
