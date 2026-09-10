@@ -23,6 +23,10 @@ class TestVertexShader : JavaShader.Vertex() {
     @Location(0)
     @JvmField
     var outPos: Vector3fc = Vector3f()
+    @Output
+    @Location(0)
+    @JvmField
+    var outPos2: Vector3fc = Vector3f()
 
     /*
     fun add(a: Vector3fc, b: Vector3fc): Vector3fc {
@@ -31,7 +35,11 @@ class TestVertexShader : JavaShader.Vertex() {
      */
 
     override fun main() {
-        outPos = Vector3f(pos2)
+        var vec = Vector3f(pos2)
+        outPos2 = vec
+        vec.add(10f, 3f, 45f)
+        vec = Vector3f(10f)
+        outPos = vec
     }
 }
 

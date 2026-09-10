@@ -4,9 +4,9 @@ import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.MethodInsnNode
 
-object KotlinIntrinsicsClassHandler : JavaShaderClassHandler, JavaShaderClassHandler.Supplier {
-    override fun getClassHandler(className: String): JavaShaderClassHandler? {
-        return if (className == "kotlin/jvm/internal/Intrinsics") this else null
+object KotlinIntrinsicsTypeHandler : JavaShaderTypeHandler, JavaShaderTypeHandler.Supplier {
+    override fun getTypeHandler(type: Type): JavaShaderTypeHandler? {
+        return if (type.internalName == "kotlin/jvm/internal/Intrinsics") this else null
     }
 
     override fun handleMethodCall(

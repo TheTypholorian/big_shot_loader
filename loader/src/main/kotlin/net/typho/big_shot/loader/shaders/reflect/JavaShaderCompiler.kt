@@ -6,12 +6,11 @@ import net.typho.big_shot.loader.shaders.bytecode.*
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.*
 import java.nio.ByteBuffer
-import java.util.function.Function
 
 class JavaShaderCompiler(
     @JvmField
     val node: ClassNode
-) : JavaShaderClassHandler.Supplier {
+) : JavaShaderTypeHandler.Supplier {
     @JvmField
     val builder = ShaderBytecodeBuilder(
         when (node.superName) {
@@ -23,11 +22,11 @@ class JavaShaderCompiler(
         }
     )
     @JvmField
-    val classHandlers = mutableListOf(VectorClassHandler, KotlinIntrinsicsClassHandler)
+    val typeHandlers = mutableListOf(JomlVectorTypeHandler, KotlinIntrinsicsTypeHandler)
     @JvmField
     val variables = mutableMapOf<String, ShaderVariable>()
 
-    override fun getClassHandler(className: String) = classHandlers.firstNotNullOfOrNull { it.getClassHandler(className) }
+    override fun getTypeHandler(type: Type) = typeHandlers.firstNotNullOfOrNull { it.getTypeHandler(type) }
 
     fun compileMethod(node: MethodNode): ShaderFunction {
         val compiler = JavaShaderMethodCompiler(this, node)
@@ -66,8 +65,9 @@ class JavaShaderCompiler(
 
         storageClass ?: return null
         type ?: return null
+        val shaderType = ShaderBytecodeType.convertJavaType(type)
 
-        return ShaderVariable(ShaderBytecodeType.Pointer(storageClass, ShaderBytecodeType.convertJavaType(type)), javaType = type, label = ShaderLabelNode(name), location = location)
+        return ShaderVariable(ShaderBytecodeType.Pointer(storageClass, shaderType), restricted = shaderType is ShaderBytecodeType.Vector, javaType = type, label = ShaderLabelNode(name), location = location)
     }
 
     fun compile(): ByteBuffer {

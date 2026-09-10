@@ -1,22 +1,14 @@
 package net.typho.big_shot.loader.shaders.reflect
 
-import net.typho.big_shot.loader.shaders.bytecode.OP_ACCESS_CHAIN
-import net.typho.big_shot.loader.shaders.bytecode.OP_COMPOSITE_CONSTRUCT
-import net.typho.big_shot.loader.shaders.bytecode.OP_CONVERT_S_TO_F
-import net.typho.big_shot.loader.shaders.bytecode.OP_F_CONVERT
-import net.typho.big_shot.loader.shaders.bytecode.OP_LOAD
-import net.typho.big_shot.loader.shaders.bytecode.OP_STORE
-import net.typho.big_shot.loader.shaders.bytecode.OP_S_CONVERT
-import net.typho.big_shot.loader.shaders.bytecode.OP_VECTOR_SHUFFLE
-import net.typho.big_shot.loader.shaders.bytecode.ShaderBytecodeType
-import net.typho.big_shot.loader.shaders.bytecode.ShaderConstant
-import net.typho.big_shot.loader.shaders.bytecode.ShaderInsnNode
-import net.typho.big_shot.loader.shaders.bytecode.ShaderLabelNode
+import net.typho.big_shot.loader.shaders.bytecode.*
 import net.typho.big_shot.loader.shaders.reflect.JavaShaderMethodCompiler.StackValue
+import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
+import org.objectweb.asm.tree.LocalVariableNode
 import org.objectweb.asm.tree.MethodInsnNode
+import org.objectweb.asm.tree.VarInsnNode
 
-abstract class VectorClassHandler(
+abstract class JomlVectorTypeHandler(
     @JvmField
     val mutableClassType: Type,
     @JvmField
@@ -27,7 +19,7 @@ abstract class VectorClassHandler(
     val mutable: Boolean,
     @JvmField
     val type: ShaderBytecodeType.Vector
-) : JavaShaderClassHandler {
+) : JavaShaderTypeHandler {
     object Double2 : DoubleVector(Type.getType("Lorg/joml/Vector2d;"), Type.getType("Lorg/joml/Vector2dc;"), true, ShaderBytecodeType.VECTOR2D)
     object Double3 : DoubleVector(Type.getType("Lorg/joml/Vector3d;"), Type.getType("Lorg/joml/Vector3dc;"), true, ShaderBytecodeType.VECTOR3D)
     object Double4 : DoubleVector(Type.getType("Lorg/joml/Vector4d;"), Type.getType("Lorg/joml/Vector4dc;"), true, ShaderBytecodeType.VECTOR4D)
@@ -60,7 +52,7 @@ abstract class VectorClassHandler(
     object Int3c : IntVector(Type.getType("Lorg/joml/Vector3i;"), Type.getType("Lorg/joml/Vector3ic;"), false, ShaderBytecodeType.VECTOR3I)
     object Int4c : IntVector(Type.getType("Lorg/joml/Vector4i;"), Type.getType("Lorg/joml/Vector4ic;"), false, ShaderBytecodeType.VECTOR4I)
 
-    companion object : JavaShaderClassHandler.Supplier {
+    companion object : JavaShaderTypeHandler.Supplier {
         @JvmStatic
         fun getDouble(count: Int) = when (count) {
             2 -> Double2
@@ -125,8 +117,8 @@ abstract class VectorClassHandler(
             else -> throw IllegalArgumentException(count.toString())
         }
 
-        override fun getClassHandler(className: String): JavaShaderClassHandler? {
-            return when (className) {
+        override fun getTypeHandler(type: Type): JavaShaderTypeHandler? {
+            return when (type.internalName) {
                 "org/joml/Vector2d" -> Double2
                 "org/joml/Vector3d" -> Double3
                 "org/joml/Vector4d" -> Double4
@@ -175,13 +167,19 @@ abstract class VectorClassHandler(
         }
 
         fun JavaShaderMethodCompiler.vectorOp(opcode: Int, type: ShaderBytecodeType.Vector, dest: StackValue, add: ShaderLabelNode, self: ShaderLabelNode) {
+            if (dest is StackValue.LoadVariable && dest.variable.restricted) {
+                throw JavaShaderCompilationException("Used a restricted variable '${dest.variable.label.name}' as a destination for a joml operation. Since shader objects are immutable while joml objects are mutable, a joml variable must either be given a new instance every store, or be final and only be modified as a destination for vector operations.")
+            }
+
             val result = ShaderLabelNode()
             function.instructions.add(ShaderInsnNode(opcode, type, result, self, add))
             vectorStoreLoad(result, dest)
         }
 
         fun JavaShaderMethodCompiler.vectorOpSelf(opcode: Int, type: ShaderBytecodeType.Vector, add: ShaderLabelNode, self: StackValue.Labeled) {
-            vectorOp(opcode, type, self, add, self.label)
+            val result = ShaderLabelNode()
+            function.instructions.add(ShaderInsnNode(opcode, type, result, self.label, add))
+            vectorStoreLoad(result, self)
         }
 
         fun JavaShaderMethodCompiler.vectorInit(type: ShaderBytecodeType.Vector, vararg values: StackValue.Labeled) {
@@ -193,6 +191,7 @@ abstract class VectorClassHandler(
 
     val classType: Type
         get() = if (mutable) mutableClassType else immutableClassType
+
     @JvmField
     val voidSinglePrimDesc = Type.getMethodDescriptor(Type.VOID_TYPE, componentType)
     @JvmField
@@ -202,12 +201,29 @@ abstract class VectorClassHandler(
     @JvmField
     val voidPrimArrayDesc = Type.getMethodDescriptor(Type.VOID_TYPE, Type.getType("[$componentType"))
 
+    @JvmField
+    val opSinglePrimDestDesc = Type.getMethodDescriptor(mutableClassType, componentType, mutableClassType)
+    @JvmField
+    val opPrimDestDesc = Type.getMethodDescriptor(mutableClassType, *Array(type.componentCount) { componentType }, mutableClassType)
+    @JvmField
+    val opImmutableDestDesc = Type.getMethodDescriptor(mutableClassType, immutableClassType, mutableClassType)
+    @JvmField
+    val opSinglePrimSelfDesc = Type.getMethodDescriptor(mutableClassType, componentType)
+    @JvmField
+    val opPrimSelfDesc = Type.getMethodDescriptor(mutableClassType, *Array(type.componentCount) { componentType })
+    @JvmField
+    val opImmutableSelfDesc = Type.getMethodDescriptor(mutableClassType, immutableClassType)
+
     override fun handleMethodCall(
         compiler: JavaShaderMethodCompiler,
         call: MethodInsnNode
     ) {
         val success = when (call.name) {
             "<init>" -> handleConstructor(compiler, call.desc)
+            "add" -> handleSimpleOp(compiler, if (type.componentType is ShaderBytecodeType.Integer) OP_I_ADD else OP_F_ADD, call.desc)
+            "sub" -> handleSimpleOp(compiler, if (type.componentType is ShaderBytecodeType.Integer) OP_I_SUB else OP_F_SUB, call.desc)
+            "mul" -> handleSimpleOp(compiler, if (type.componentType is ShaderBytecodeType.Integer) OP_I_MUL else OP_F_MUL, call.desc)
+            "div" -> handleSimpleOp(compiler, if (type.componentType is ShaderBytecodeType.Integer) OP_S_DIV else OP_F_DIV, call.desc)
             else -> false
         }
 
@@ -216,7 +232,50 @@ abstract class VectorClassHandler(
         }
     }
 
-    protected open fun noArgVector(compiler: JavaShaderMethodCompiler) {
+    override fun createLocalVariable(
+        compiler: JavaShaderMethodCompiler,
+        id: Int,
+        local: LocalVariableNode,
+        javaType: Type,
+        type: ShaderBytecodeType
+    ): ShaderVariable? {
+        var restricted = false
+
+        if (mutable) {
+            var used = false
+
+            for (insn in compiler.node.instructions) {
+                if (insn is VarInsnNode && insn.`var` == id && insn.opcode == Opcodes.ASTORE) {
+                    if (used) {
+                        restricted = true
+                        break
+                    } else {
+                        used = true
+                    }
+                }
+            }
+        }
+
+        return ShaderVariable(ShaderBytecodeType.Pointer(STORAGE_CLASS_FUNCTION, type), ShaderLabelNode(local.name), restricted = restricted, javaType = javaType)
+    }
+
+    protected open fun handleSimpleOp(compiler: JavaShaderMethodCompiler, opcode: Int, desc: String): Boolean {
+        when (desc) {
+            opSinglePrimDestDesc -> compiler.vectorOp(opcode, type, compiler.stack.pop(), compiler.createVector(type, *compiler.stack.popSingleVectorComponent(type)), (compiler.stack.pop() as StackValue.Labeled).label)
+            opPrimDestDesc -> compiler.vectorOp(opcode, type, compiler.stack.pop(), compiler.createVector(type, *compiler.stack.popVectorComponents(type)), (compiler.stack.pop() as StackValue.Labeled).label)
+            opImmutableDestDesc -> compiler.vectorOp(opcode, type, compiler.stack.pop(), (compiler.stack.pop() as StackValue.Labeled).label, (compiler.stack.pop() as StackValue.Labeled).label)
+
+            opSinglePrimSelfDesc -> compiler.vectorOpSelf(opcode, type, compiler.createVector(type, *compiler.stack.popSingleVectorComponent(type)), compiler.stack.pop() as StackValue.Labeled)
+            opPrimSelfDesc -> compiler.vectorOpSelf(opcode, type, compiler.createVector(type, *compiler.stack.popVectorComponents(type)), compiler.stack.pop() as StackValue.Labeled)
+            opImmutableSelfDesc -> compiler.vectorOpSelf(opcode, type, (compiler.stack.pop() as StackValue.Labeled).label, compiler.stack.pop() as StackValue.Labeled)
+
+            else -> return false
+        }
+
+        return true
+    }
+
+    protected open fun handleNoArgVector(compiler: JavaShaderMethodCompiler) {
         val zero = StackValue.Label(compiler.parent.builder.getConstant((type.componentType as ShaderBytecodeType.Numerical).getConstant(0)))
 
         if (type.componentCount == 4) {
@@ -227,11 +286,11 @@ abstract class VectorClassHandler(
         }
     }
 
-    protected abstract fun cast(compiler: JavaShaderMethodCompiler, arg: Type, input: StackValue.Labeled, type: ShaderBytecodeType.Vector): StackValue.Labeled?
+    protected abstract fun castConstructorType(compiler: JavaShaderMethodCompiler, arg: Type, input: StackValue.Labeled, type: ShaderBytecodeType.Vector): StackValue.Labeled?
 
     protected open fun handleConstructor(compiler: JavaShaderMethodCompiler, desc: String): Boolean {
         when (desc) {
-            "()V" -> noArgVector(compiler)
+            "()V" -> handleNoArgVector(compiler)
             voidSinglePrimDesc -> compiler.vectorInit(type, *compiler.stack.popSingleVectorComponent(type))
             voidPrimDesc -> compiler.vectorInit(type, *compiler.stack.popVectorComponents(type))
             voidImmutableDesc -> compiler.vectorInit(type, compiler.stack.pop() as StackValue.Labeled)
@@ -253,7 +312,7 @@ abstract class VectorClassHandler(
                     1 -> {
                         if (type.componentCount == 2) {
                             when (args[0]) {
-                                Double3c.classType, Float3c.classType, Int3c.classType -> {
+                                Double3c.classType, Float3c.classType, Int3c.classType -> { // TODO abstractify
                                     val targetLabel = ShaderLabelNode()
                                     compiler.function.instructions.add(ShaderInsnNode(OP_VECTOR_SHUFFLE, type, targetLabel, (compiler.stack.pop() as StackValue.Labeled).label, 0, 1))
                                     compiler.vectorInit(type, StackValue.Label(targetLabel))
@@ -263,7 +322,7 @@ abstract class VectorClassHandler(
                         }
 
                         val input = compiler.stack.pop() as StackValue.Labeled
-                        val processed = cast(compiler, args[0], input, type) ?: return false
+                        val processed = castConstructorType(compiler, args[0], input, type) ?: return false
                         compiler.vectorInit(type, processed)
                         return true
                     }
@@ -272,7 +331,7 @@ abstract class VectorClassHandler(
                             val z = compiler.stack.pop() as StackValue.Labeled
                             val xy = compiler.stack.pop() as StackValue.Labeled
 
-                            val processed = cast(compiler, args[0], xy, type.copy(componentCount = type.componentCount - 1)) ?: return false
+                            val processed = castConstructorType(compiler, args[0], xy, type.copy(componentCount = type.componentCount - 1)) ?: return false
                             compiler.vectorInit(type, processed, z)
                             return true
                         }
@@ -283,7 +342,7 @@ abstract class VectorClassHandler(
                             val z = compiler.stack.pop() as StackValue.Labeled
                             val xy = compiler.stack.pop() as StackValue.Labeled
 
-                            val processed = cast(compiler, args[0], xy, type.copy(componentCount = type.componentCount - 2)) ?: return false
+                            val processed = castConstructorType(compiler, args[0], xy, type.copy(componentCount = type.componentCount - 2)) ?: return false
                             compiler.vectorInit(type, processed, z, w)
                             return true
                         }
@@ -302,8 +361,8 @@ abstract class VectorClassHandler(
         immutableClassType: Type,
         mutable: Boolean,
         type: ShaderBytecodeType.Vector
-    ) : VectorClassHandler(mutableClassType, immutableClassType, Type.DOUBLE_TYPE, mutable, type) {
-        override fun cast(
+    ) : JomlVectorTypeHandler(mutableClassType, immutableClassType, Type.DOUBLE_TYPE, mutable, type) {
+        override fun castConstructorType(
             compiler: JavaShaderMethodCompiler,
             arg: Type,
             input: StackValue.Labeled,
@@ -326,8 +385,8 @@ abstract class VectorClassHandler(
         immutableClassType: Type,
         mutable: Boolean,
         type: ShaderBytecodeType.Vector
-    ) : VectorClassHandler(mutableClassType, immutableClassType, Type.FLOAT_TYPE, mutable, type) {
-        override fun cast(
+    ) : JomlVectorTypeHandler(mutableClassType, immutableClassType, Type.FLOAT_TYPE, mutable, type) {
+        override fun castConstructorType(
             compiler: JavaShaderMethodCompiler,
             arg: Type,
             input: StackValue.Labeled,
@@ -355,8 +414,8 @@ abstract class VectorClassHandler(
         immutableClassType: Type,
         mutable: Boolean,
         type: ShaderBytecodeType.Vector
-    ) : VectorClassHandler(mutableClassType, immutableClassType, Type.LONG_TYPE, mutable, type) {
-        override fun cast(
+    ) : JomlVectorTypeHandler(mutableClassType, immutableClassType, Type.LONG_TYPE, mutable, type) {
+        override fun castConstructorType(
             compiler: JavaShaderMethodCompiler,
             arg: Type,
             input: StackValue.Labeled,
@@ -379,8 +438,8 @@ abstract class VectorClassHandler(
         immutableClassType: Type,
         mutable: Boolean,
         type: ShaderBytecodeType.Vector
-    ) : VectorClassHandler(mutableClassType, immutableClassType, Type.INT_TYPE, mutable, type) {
-        override fun cast(
+    ) : JomlVectorTypeHandler(mutableClassType, immutableClassType, Type.INT_TYPE, mutable, type) {
+        override fun castConstructorType(
             compiler: JavaShaderMethodCompiler,
             arg: Type,
             input: StackValue.Labeled,

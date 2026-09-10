@@ -1,10 +1,10 @@
 package net.typho.big_shot.loader.shaders.reflect
 
 import net.typho.big_shot.loader.shaders.bytecode.*
-import net.typho.big_shot.loader.shaders.reflect.VectorClassHandler.Companion.createVector
-import net.typho.big_shot.loader.shaders.reflect.VectorClassHandler.Companion.vectorOp
-import net.typho.big_shot.loader.shaders.reflect.VectorClassHandler.Companion.vectorOpSelf
-import net.typho.big_shot.loader.shaders.reflect.VectorClassHandler.Companion.vectorStoreLoad
+import net.typho.big_shot.loader.shaders.reflect.JomlVectorTypeHandler.Companion.createVector
+import net.typho.big_shot.loader.shaders.reflect.JomlVectorTypeHandler.Companion.vectorOp
+import net.typho.big_shot.loader.shaders.reflect.JomlVectorTypeHandler.Companion.vectorOpSelf
+import net.typho.big_shot.loader.shaders.reflect.JomlVectorTypeHandler.Companion.vectorStoreLoad
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.FieldInsnNode
@@ -79,25 +79,7 @@ class JavaShaderMethodCompiler(
                         fun vector(type: ShaderBytecodeType.Vector, prim: String, name: String) {
                             val fullPrim = prim.repeat(type.componentCount)
 
-                            fun op(opcode: Int) {
-                                when (insn.desc) {
-                                    "(${prim}Lorg/joml/$name;)Lorg/joml/$name;" -> vectorOp(opcode, type, stack.pop(), createVector(type, *stack.popSingleVectorComponent(type)), (stack.pop() as StackValue.Labeled).label)
-                                    "(${fullPrim}Lorg/joml/$name;)Lorg/joml/$name;" -> vectorOp(opcode, type, stack.pop(), createVector(type, *stack.popVectorComponents(type)), (stack.pop() as StackValue.Labeled).label)
-                                    "(Lorg/joml/${name}c;Lorg/joml/$name;)Lorg/joml/$name;" -> vectorOp(opcode, type, stack.pop(), (stack.pop() as StackValue.Labeled).label, (stack.pop() as StackValue.Labeled).label)
-
-                                    "(${prim})Lorg/joml/$name;" -> vectorOpSelf(opcode, type, createVector(type, *stack.popSingleVectorComponent(type)), stack.pop() as StackValue.Labeled)
-                                    "(${fullPrim})Lorg/joml/$name;" -> vectorOpSelf(opcode, type, createVector(type, *stack.popVectorComponents(type)), stack.pop() as StackValue.Labeled)
-                                    "(Lorg/joml/${name}c;)Lorg/joml/$name;" -> vectorOpSelf(opcode, type, (stack.pop() as StackValue.Labeled).label, stack.pop() as StackValue.Labeled)
-
-                                    else -> TODO()
-                                }
-                            }
-
                             when (insn.name) {
-                                "add" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_I_ADD else OP_F_ADD)
-                                "sub" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_I_SUB else OP_F_SUB)
-                                "mul" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_I_MUL else OP_F_MUL)
-                                "div" -> op(if (type.componentType is ShaderBytecodeType.Integer) OP_S_DIV else OP_F_DIV)
                                 "distance" -> when (insn.desc) {
                                     "(Lorg/joml/${name}c;)$prim" -> {
                                         val other = stack.pop() as StackValue.Labeled
@@ -242,7 +224,7 @@ class JavaShaderMethodCompiler(
                             }
                         }
 
-                        parent.getClassHandler(insn.owner)?.let {
+                        parent.getTypeHandler(Type.getObjectType(insn.owner))?.let {
                             it.handleMethodCall(this@JavaShaderMethodCompiler, insn)
                             continue
                         }
@@ -283,7 +265,7 @@ class JavaShaderMethodCompiler(
                                     Opcodes.T_DOUBLE -> ShaderBytecodeType.DOUBLE
                                     else -> throw AssertionError()
                                 }
-                                val variable = ShaderVariable(ShaderBytecodeType.Pointer(STORAGE_CLASS_FUNCTION, ShaderBytecodeType.Array(type, length.const.value.first() as Int)))
+                                val variable = ShaderVariable(ShaderBytecodeType.Pointer(STORAGE_CLASS_FUNCTION, ShaderBytecodeType.Array(type, length.const.value.first() as Int)), restricted = type is ShaderBytecodeType.Vector)
                                 stack.push(StackValue.Array(variable))
                                 add(ShaderInsnNode(OP_VARIABLE, variable.type, variable.label, variable.type.storageClass, variable.initializer))
                             }
@@ -475,7 +457,7 @@ class JavaShaderMethodCompiler(
                     val type = ShaderBytecodeType.convertJavaType(javaType)
 
                     if (type !is ShaderBytecodeType.Array) { // arrays are defined later
-                        val variable = ShaderVariable(ShaderBytecodeType.Pointer(STORAGE_CLASS_FUNCTION, type), ShaderLabelNode(local.name), javaType = javaType)
+                        val variable = parent.getTypeHandler(javaType)?.createLocalVariable(this, id, local, javaType, type) ?: ShaderVariable(ShaderBytecodeType.Pointer(STORAGE_CLASS_FUNCTION, type), ShaderLabelNode(local.name), javaType = javaType)
                         function.instructions.add(ShaderInsnNode(OP_VARIABLE, variable.type, variable.label, variable.type.storageClass, variable.initializer))
                         return@computeIfAbsent variable
                     }
