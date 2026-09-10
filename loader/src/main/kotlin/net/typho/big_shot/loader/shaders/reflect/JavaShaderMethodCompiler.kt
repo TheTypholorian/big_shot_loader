@@ -28,9 +28,11 @@ class JavaShaderMethodCompiler(
     val locals = mutableMapOf<Int, Local>()
     @JvmField
     val function = ShaderFunction(ShaderBytecodeType.convertJavaType(Type.getMethodType(node.desc)) as ShaderBytecodeType.Function, label = ShaderLabelNode(node.name))
+    private var remainingLocals = node.localVariables?.toMutableList() ?: mutableListOf()
 
     fun loadLocal(local: LocalVariableNode): Local {
         println("loading $local ${local.index}")
+        remainingLocals.remove(local)
 
         return if (node.access and Opcodes.ACC_STATIC == 0 && local.index == 0) {
             Local.This(local.end)
@@ -51,7 +53,7 @@ class JavaShaderMethodCompiler(
     fun getOrLoadLocal(id: Int): Local? {
         locals[id]?.let { return it }
 
-        val next = (node.localVariables ?: return null)
+        val next = remainingLocals
             .filter { it.index == id }
             .minByOrNull { node.instructions.indexOf(it.start) }
             ?: return null
@@ -63,6 +65,7 @@ class JavaShaderMethodCompiler(
     fun compile() {
         stack.clear()
         locals.clear()
+        remainingLocals = node.localVariables?.toMutableList() ?: mutableListOf()
         function.instructions.clear()
         function.instructions.apply {
             function.instructions.add(ShaderInsnNode(OP_LABEL, ShaderLabelNode()))
@@ -77,10 +80,8 @@ class JavaShaderMethodCompiler(
                         }
                         locals.values.removeIf { it.end === insn }
 
-                        node.localVariables?.forEach { local ->
-                            if (local.start === insn) {
-                                locals[local.index] = loadLocal(local)
-                            }
+                        remainingLocals.filter { it.start === insn }.forEach { local ->
+                            locals[local.index] = loadLocal(local)
                         }
                         continue
                     }
@@ -109,7 +110,7 @@ class JavaShaderMethodCompiler(
                                     locals[insn.`var`] = Local.Variable(value.variable, local.end)
 
                                     if (value.variable.label.name == null) {
-                                        value.variable.label.name = node.localVariables?.firstOrNull { it.index == insn.`var` }?.name
+                                        value.variable.label.name = remainingLocals.firstOrNull { it.index == insn.`var` }?.name
                                     }
                                 } else if (value is StackValue.LoadVariable && value.variable.type.type is ShaderBytecodeType.Vector) {
                                     throw UnsupportedOperationException("Cannot store a mutable ${value.variable.type.type} value from one variable in another, since joml vectors are mutable while glsl vectors are immutable.")
