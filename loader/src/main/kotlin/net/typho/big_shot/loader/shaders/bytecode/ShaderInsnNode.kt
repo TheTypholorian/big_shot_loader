@@ -18,12 +18,12 @@ data class ShaderInsnNode(
                 is Byte, is Short, is Int, is ShaderLabelNode, is Float -> 1
                 is Long, is Double -> 2
                 is CharSequence -> (value.length + 4) / 4 // round up to nearest word plus padding
-                else -> throw IllegalArgumentException("Illegal ShaderInsnNode value $value (${value.javaClass})")
+                else -> throw IllegalArgumentException("Error in shader instruction $this: Illegal ShaderInsnNode value $value (${value.javaClass})")
             }
         } + 1 // include the header word
 
         if (words > 0xFFFF) {
-            throw IllegalArgumentException("Cannot have a ShaderInsnNode that is longer than ${0xFFFF} words")
+            throw IllegalArgumentException("Error in shader instruction $this: Cannot have a ShaderInsnNode that is longer than ${0xFFFF} words")
         }
 
         words
@@ -73,7 +73,7 @@ data class ShaderInsnNode(
                 is CharSequence -> {
                     value.forEach {
                         if (it.code > 0xFF) {
-                            throw IllegalArgumentException("CharSequence characters in ShaderInsnNode values must be in the range 0-255")
+                            throw IllegalArgumentException("Error in shader instruction $this: CharSequence characters in ShaderInsnNode values must be in the range 0-255")
                         }
 
                         buffer.put(it.code.toByte())

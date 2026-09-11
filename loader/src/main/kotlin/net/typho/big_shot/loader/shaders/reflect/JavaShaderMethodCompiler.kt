@@ -1,5 +1,6 @@
 package net.typho.big_shot.loader.shaders.reflect
 
+import net.typho.asm_util.method.MethodPointer
 import net.typho.big_shot.loader.shaders.bytecode.*
 import net.typho.big_shot.loader.shaders.reflect.JomlVectorTypeHandler.Companion.createVector
 import net.typho.big_shot.loader.shaders.reflect.JomlVectorTypeHandler.Companion.vectorStoreLoad
@@ -35,17 +36,17 @@ class JavaShaderMethodCompiler(
         remainingLocals.remove(local)
 
         return if (node.access and Opcodes.ACC_STATIC == 0 && local.index == 0) {
-            Local.This(local.end)
+            Local.This(local)
         } else {
             val javaType = Type.getType(local.desc)
             val type = ShaderBytecodeType.convertJavaType(javaType)
 
             if (type is ShaderBytecodeType.Array) {
-                Local.NewArray(type, local.end)
+                Local.NewArray(type, local)
             } else {
                 val variable = parent.getTypeHandler(javaType)?.createLocalVariable(this@JavaShaderMethodCompiler, local, javaType, type) ?: ShaderVariable(ShaderBytecodeType.Pointer(STORAGE_CLASS_FUNCTION, type), ShaderLabelNode(local.name), javaType = javaType)
                 function.instructions.add(ShaderInsnNode(OP_VARIABLE, variable.type, variable.label, variable.type.storageClass, variable.initializer))
-                Local.Variable(variable, local.end)
+                Local.Variable(variable, local)
             }
         }
     }
@@ -74,11 +75,11 @@ class JavaShaderMethodCompiler(
                 when (insn) {
                     is LabelNode -> {
                         locals.values.forEach {
-                            if (it.end === insn) {
+                            if (it.local.end === insn) {
                                 println("$it expired")
                             }
                         }
-                        locals.values.removeIf { it.end === insn }
+                        locals.values.removeIf { it.local.end === insn }
 
                         remainingLocals.filter { it.start === insn }.forEach { local ->
                             locals[local.index] = loadLocal(local)
@@ -94,7 +95,7 @@ class JavaShaderMethodCompiler(
                                 if (local is Local.This) {
                                     stack.push(StackValue.This)
                                 } else {
-                                    stack.push(StackValue.LoadVariable(this, local.variable!!))
+                                    stack.push(local.load(this@JavaShaderMethodCompiler)!!)
                                 }
                             }
                             Opcodes.ISTORE, Opcodes.LSTORE, Opcodes.FSTORE, Opcodes.DSTORE, Opcodes.ASTORE -> {
@@ -107,13 +108,13 @@ class JavaShaderMethodCompiler(
                                         TODO("reassigning arrays?")
                                     }
 
-                                    locals[insn.`var`] = Local.Variable(value.variable, local.end)
+                                    locals[insn.`var`] = Local.Variable(value.variable, local.local)
 
                                     if (value.variable.label.name == null) {
                                         value.variable.label.name = remainingLocals.firstOrNull { it.index == insn.`var` }?.name
                                     }
                                 } else if (value is StackValue.LoadVariable && value.variable.type.type is ShaderBytecodeType.Vector) {
-                                    throw UnsupportedOperationException("Cannot store a mutable ${value.variable.type.type} value from one variable in another, since joml vectors are mutable while glsl vectors are immutable.")
+                                    throw JavaShaderCompilationException("Cannot store a mutable ${value.variable.type.type} value from one variable in another, since joml vectors are mutable while glsl vectors are immutable.")
                                 } else {
                                     add(ShaderInsnNode(OP_STORE, getOrLoadLocal(insn.`var`)!!.variable!!.label, value.label!!))
                                 }
@@ -272,6 +273,22 @@ class JavaShaderMethodCompiler(
                             }
                         }
 
+                        if (insn.owner == parent.node.name) {
+                            val node = MethodPointer.method().name(insn.name).desc(insn.desc).findOrThrow(parent.node)
+                            val func = parent.getOrCompileMethod(node)
+                            val args = Array(Type.getArgumentCount(insn.desc)) { stack.pop().label!! }.reversedArray()
+
+                            if (stack.pop() != StackValue.This) {
+                                throw AssertionError()
+                            }
+
+                            val result = ShaderLabelNode()
+                            add(ShaderInsnNode(OP_FUNCTION_CALL, func.type.returnType, result, func.type, *args))
+                            stack.push(StackValue.Label(result))
+
+                            continue
+                        }
+
                         parent.getTypeHandler(Type.getObjectType(insn.owner))?.let {
                             it.handleMethodCall(this@JavaShaderMethodCompiler, insn)
                             continue
@@ -300,7 +317,7 @@ class JavaShaderMethodCompiler(
                                 val length = stack.pop()
 
                                 if (length !is StackValue.Constant) {
-                                    throw IllegalStateException("Cannot create arrays of dynamic size")
+                                    throw JavaShaderCompilationException("Cannot create arrays of dynamic size")
                                 }
 
                                 val type = when (insn.operand) {
@@ -332,7 +349,7 @@ class JavaShaderMethodCompiler(
                                             val name = type.internalName
 
                                             if (name.equals("${insn.desc}c")) {
-                                                throw UnsupportedOperationException("Illegal cast from an immutable joml class $name to ${insn.desc}")
+                                                throw JavaShaderCompilationException("Illegal cast from an immutable joml class $name to ${insn.desc}")
                                             }
                                         }
                                     }
@@ -480,7 +497,7 @@ class JavaShaderMethodCompiler(
                             // TODO rest of math opcodes
 
                             Opcodes.RETURN -> add(ShaderInsnNode(OP_RETURN))
-                            Opcodes.IRETURN, Opcodes.LRETURN, Opcodes.FRETURN, Opcodes.DRETURN, Opcodes.ARETURN -> add(ShaderInsnNode(OP_RETURN_VALUE, stack.pop()))
+                            Opcodes.IRETURN, Opcodes.LRETURN, Opcodes.FRETURN, Opcodes.DRETURN, Opcodes.ARETURN -> add(ShaderInsnNode(OP_RETURN_VALUE, stack.pop().label!!))
 
                             else -> TODO("${insn.opcode}")
                         }
@@ -492,7 +509,7 @@ class JavaShaderMethodCompiler(
             }
 
             if (!stack.isEmpty()) {
-                throw IllegalStateException("Stack is not empty at the end of the method")
+                throw JavaShaderCompilationException("Stack is not empty at the end of method ${node.name}")
             }
         }
     }
@@ -650,21 +667,33 @@ class JavaShaderMethodCompiler(
     sealed interface Local {
         val variable: ShaderVariable?
             get() = null
-        val end: LabelNode
+        val local: LocalVariableNode
+
+        fun load(compiler: JavaShaderMethodCompiler): StackValue? = null
 
         data class Variable(
             override val variable: ShaderVariable,
-            override val end: LabelNode
-        ) : Local
+            override val local: LocalVariableNode
+        ) : Local {
+            override fun load(compiler: JavaShaderMethodCompiler) = StackValue.LoadVariable(compiler.function.instructions, variable)
+        }
+
+        data class Argument(
+            @JvmField
+            val label: ShaderLabelNode,
+            override val local: LocalVariableNode
+        ) : Local {
+            override fun load(compiler: JavaShaderMethodCompiler) = StackValue.Label(label)
+        }
 
         data class NewArray(
             @JvmField
             val type: ShaderBytecodeType.Array,
-            override val end: LabelNode
+            override val local: LocalVariableNode
         ) : Local
 
         data class This(
-            override val end: LabelNode
+            override val local: LocalVariableNode
         ) : Local
     }
 }

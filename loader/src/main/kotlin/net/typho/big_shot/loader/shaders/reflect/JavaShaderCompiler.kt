@@ -25,8 +25,17 @@ class JavaShaderCompiler(
     val typeHandlers = mutableListOf(JomlVectorTypeHandler, KotlinIntrinsicsTypeHandler)
     @JvmField
     val variables = mutableMapOf<String, ShaderVariable>()
+    @JvmField
+    val functions = mutableMapOf<MethodNode, ShaderFunction>()
 
     override fun getTypeHandler(type: Type) = typeHandlers.firstNotNullOfOrNull { it.getTypeHandler(type) }
+
+    fun getOrCompileMethod(node: MethodNode): ShaderFunction {
+        return functions[node] ?: compileMethod(node).also {
+            builder.functions.add(it)
+            functions[node] = it
+        }
+    }
 
     fun compileMethod(node: MethodNode): ShaderFunction {
         val compiler = JavaShaderMethodCompiler(this, node)
@@ -86,8 +95,7 @@ class JavaShaderCompiler(
             field
         }
 
-        val main = compileMethod(MethodPointer.method().name("main").desc("()V").findOrThrow(node))
-        builder.functions.add(main)
+        val main = getOrCompileMethod(MethodPointer.method().name("main").desc("()V").findOrThrow(node))
 
         return builder.build(main)
     }
