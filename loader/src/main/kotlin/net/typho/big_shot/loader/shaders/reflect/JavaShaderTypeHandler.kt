@@ -12,6 +12,8 @@ interface JavaShaderTypeHandler {
 
     fun handleMethodCall(compiler: JavaShaderMethodCompiler, call: MethodInsnNode)
 
+    fun handleCastFrom(compiler: JavaShaderMethodCompiler, from: JavaShaderMethodCompiler.StackValue)
+
     fun createLocalVariable(compiler: JavaShaderMethodCompiler, local: LocalVariableNode, javaType: Type, type: ShaderBytecodeType): ShaderVariable? {
         return null
     }

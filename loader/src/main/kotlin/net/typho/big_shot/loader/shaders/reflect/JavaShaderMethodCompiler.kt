@@ -7,6 +7,7 @@ import net.typho.big_shot.loader.shaders.reflect.JomlVectorTypeHandler.Companion
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.FieldInsnNode
+import org.objectweb.asm.tree.IincInsnNode
 import org.objectweb.asm.tree.IntInsnNode
 import org.objectweb.asm.tree.LabelNode
 import org.objectweb.asm.tree.LdcInsnNode
@@ -84,206 +85,239 @@ class JavaShaderMethodCompiler(
             function.instructions.add(ShaderInsnNode(OP_LABEL, ShaderLabelNode()))
 
             for (insn in node.instructions) {
-                when (insn) {
-                    is LabelNode -> {
-                        locals.values.forEach {
-                            if (it.local.end === insn) {
-                                println("$it expired")
+                when (insn.opcode) {
+                    -1 -> {
+                        if (insn is LabelNode) {
+                            locals.values.forEach {
+                                if (it.local.end === insn) {
+                                    println("$it expired")
+                                }
+                            }
+                            locals.values.removeIf { it.local.end === insn }
+
+                            remainingLocals.filter { it.start === insn }.forEach { local ->
+                                locals[local.index] = loadLocal(local)
                             }
                         }
-                        locals.values.removeIf { it.local.end === insn }
-
-                        remainingLocals.filter { it.start === insn }.forEach { local ->
-                            locals[local.index] = loadLocal(local)
-                        }
-                        continue
                     }
-                    is LineNumberNode -> continue
-                    is VarInsnNode -> {
-                        when (insn.opcode) {
-                            Opcodes.ILOAD, Opcodes.LLOAD, Opcodes.FLOAD, Opcodes.DLOAD, Opcodes.ALOAD -> {
-                                val local = locals[insn.`var`]!!
 
-                                if (local is Local.This) {
-                                    stack.push(StackValue.This)
-                                } else {
-                                    stack.push(local.load(this@JavaShaderMethodCompiler)!!)
-                                }
-                            }
-                            Opcodes.ISTORE, Opcodes.LSTORE, Opcodes.FSTORE, Opcodes.DSTORE, Opcodes.ASTORE -> {
-                                val value = stack.pop()
+                    Opcodes.NOP -> add(ShaderInsnNode(OP_NO_OP))
 
-                                if (value is StackValue.Array) {
-                                    val local = getOrLoadLocal(insn.`var`)!!
+                    Opcodes.ACONST_NULL -> throw JavaShaderCompilationException("Nullability isn't supported")
 
-                                    if (local !is Local.NewArray) {
-                                        TODO("reassigning arrays?")
-                                    }
+                    Opcodes.ICONST_M1 -> const(ShaderBytecodeType.INT, -1)
+                    Opcodes.ICONST_0 -> const(ShaderBytecodeType.INT, 0)
+                    Opcodes.ICONST_1 -> const(ShaderBytecodeType.INT, 1)
+                    Opcodes.ICONST_2 -> const(ShaderBytecodeType.INT, 2)
+                    Opcodes.ICONST_3 -> const(ShaderBytecodeType.INT, 3)
+                    Opcodes.ICONST_4 -> const(ShaderBytecodeType.INT, 4)
+                    Opcodes.ICONST_5 -> const(ShaderBytecodeType.INT, 5)
 
-                                    locals[insn.`var`] = Local.Variable(value.variable, local.local)
+                    Opcodes.LCONST_0 -> const(ShaderBytecodeType.LONG, 0L)
+                    Opcodes.LCONST_1 -> const(ShaderBytecodeType.LONG, 1L)
 
-                                    if (value.variable.label.name == null) {
-                                        value.variable.label.name = remainingLocals.firstOrNull { it.index == insn.`var` }?.name
-                                    }
-                                } else if (value is StackValue.LoadVariable && value.variable.type.type is ShaderBytecodeType.Vector) {
-                                    throw JavaShaderCompilationException("Cannot store a mutable ${value.variable.type.type} value from one variable in another, since joml vectors are mutable while glsl vectors are immutable.")
-                                } else {
-                                    add(ShaderInsnNode(OP_STORE, getOrLoadLocal(insn.`var`)!!.variable!!.label, value.label!!))
-                                }
-                            }
-                            else -> TODO()
-                        }
+                    Opcodes.FCONST_0 -> const(ShaderBytecodeType.FLOAT, 0f)
+                    Opcodes.FCONST_1 -> const(ShaderBytecodeType.FLOAT, 1f)
+                    Opcodes.FCONST_2 -> const(ShaderBytecodeType.FLOAT, 2f)
 
-                        continue
+                    Opcodes.DCONST_0 -> const(ShaderBytecodeType.DOUBLE, 0.0)
+                    Opcodes.DCONST_1 -> const(ShaderBytecodeType.DOUBLE, 1.0)
+
+                    Opcodes.BIPUSH, Opcodes.SIPUSH -> const(ShaderBytecodeType.INT, (insn as IntInsnNode).operand)
+                    Opcodes.LDC -> when (val const = (insn as LdcInsnNode).cst) {
+                        is Boolean -> const(ShaderBytecodeType.Bool, const)
+                        is Byte -> const(ShaderBytecodeType.BYTE, const)
+                        is Short -> const(ShaderBytecodeType.SHORT, const)
+                        is Int -> const(ShaderBytecodeType.INT, const)
+                        is Long -> const(ShaderBytecodeType.LONG, const)
+                        is Float -> const(ShaderBytecodeType.FLOAT, const)
+                        is Double -> const(ShaderBytecodeType.DOUBLE, const)
+                        is String -> stack.push(StackValue.StringConstant(const))
+                        else -> throw JavaShaderCompilationException("Unsupported constant $const")
                     }
-                    is MethodInsnNode -> {
-                        fun vector(type: ShaderBytecodeType.Vector, prim: String, name: String) {
-                            val fullPrim = prim.repeat(type.componentCount)
 
-                            when (insn.name) {
-                                "distance" -> when (insn.desc) {
-                                    "(Lorg/joml/${name}c;)$prim" -> {
-                                        val other = stack.pop()
-                                        val self = stack.pop()
-                                        val result = ShaderLabelNode()
-                                        add(ShaderInsnNode(
-                                            OP_EXT_INST,
-                                            type.componentType,
-                                            result,
-                                            parent.builder.import("GLSL.std.450"),
-                                            GLSL_DISTANCE,
-                                            self.label,
-                                            other.label
-                                        ))
-                                        stack.push(StackValue.Label(result))
-                                    }
-                                    else -> TODO()
-                                }
-                                "length" -> when (insn.desc) {
-                                    "()$prim" -> {
-                                        val self = stack.pop()
-                                        val result = ShaderLabelNode()
-                                        add(ShaderInsnNode(
-                                            OP_EXT_INST,
-                                            type.componentType,
-                                            result,
-                                            parent.builder.import("GLSL.std.450"),
-                                            GLSL_LENGTH,
-                                            self.label
-                                        ))
-                                        stack.push(StackValue.Label(result))
-                                    }
-                                    else -> TODO()
-                                }
-                                "lengthSquared" -> when (insn.desc) {
-                                    "()$prim" -> {
-                                        val self = stack.pop()
-                                        val result = ShaderLabelNode()
-                                        add(ShaderInsnNode(
-                                            OP_DOT,
-                                            type.componentType,
-                                            result,
-                                            self.label,
-                                            self.label
-                                        ))
-                                        stack.push(StackValue.Label(result))
-                                    }
-                                    else -> TODO()
-                                }
-                                "normalize" -> when (insn.desc) {
-                                    "()Lorg/joml/$name;" -> {
-                                        val self = stack.pop()
-                                        val result = ShaderLabelNode()
-                                        add(ShaderInsnNode(
-                                            OP_EXT_INST,
-                                            type,
-                                            result,
-                                            parent.builder.import("GLSL.std.450"),
-                                            GLSL_NORMALIZE,
-                                            self.label
-                                        ))
-                                        vectorStoreLoad(result, self)
-                                    }
-                                    "(Lorg/joml/$name;)Lorg/joml/$name;" -> {
-                                        val dest = stack.pop()
-                                        val self = stack.pop()
-                                        val result = ShaderLabelNode()
-                                        add(ShaderInsnNode(
-                                            OP_EXT_INST,
-                                            type,
-                                            result,
-                                            parent.builder.import("GLSL.std.450"),
-                                            GLSL_NORMALIZE,
-                                            self.label
-                                        ))
-                                        vectorStoreLoad(result, dest)
-                                    }
+                    Opcodes.ILOAD, Opcodes.LLOAD, Opcodes.FLOAD, Opcodes.DLOAD, Opcodes.ALOAD -> {
+                        val local = locals[(insn as VarInsnNode).`var`]!!
 
-                                    else -> TODO()
-                                }
-                                "cross" -> when (insn.desc) {
-                                    "(Lorg/joml/${name}c;)Lorg/joml/$name;" -> {
-                                        val other = stack.pop()
-                                        val self = stack.pop()
-                                        val result = ShaderLabelNode()
-                                        add(ShaderInsnNode(
-                                            OP_EXT_INST,
-                                            type,
-                                            result,
-                                            parent.builder.import("GLSL.std.450"),
-                                            GLSL_CROSS,
-                                            self.label,
-                                            other.label
-                                        ))
-                                        vectorStoreLoad(result, self)
-                                    }
-                                    "(Lorg/joml/${name}c;Lorg/joml/$name;)Lorg/joml/$name;" -> {
-                                        val dest = stack.pop()
-                                        val other = stack.pop()
-                                        val self = stack.pop()
-                                        val result = ShaderLabelNode()
-                                        add(ShaderInsnNode(
-                                            OP_EXT_INST,
-                                            type,
-                                            result,
-                                            parent.builder.import("GLSL.std.450"),
-                                            GLSL_CROSS,
-                                            self.label,
-                                            other.label
-                                        ))
-                                        vectorStoreLoad(result, dest)
-                                    }
+                        if (local is Local.This) {
+                            stack.push(StackValue.This)
+                        } else {
+                            stack.push(local.load(this@JavaShaderMethodCompiler)!!)
+                        }
+                    }
+                    Opcodes.IALOAD, Opcodes.LALOAD, Opcodes.FALOAD, Opcodes.DALOAD, Opcodes.AALOAD, Opcodes.BALOAD, Opcodes.CALOAD, Opcodes.SALOAD -> {
+                        val index = stack.pop().label!!
+                        val array = stack.pop() as StackValue.Array
 
-                                    else -> TODO()
-                                }
-                                "<init>" -> {
-                                    when (insn.desc) {
-                                        "()V" -> {
-                                            val vec = createVector(type, StackValue.Label(parent.builder.getConstant(ShaderConstant(ShaderBytecodeType.INT, listOf(0)).tryCast(type.componentType)!!)))
-                                            val self = stack.pop() as StackValue.NewObject
-                                            stack.replace(self, StackValue.Label(vec))
-                                        }
-                                        "(${prim})V" -> {
-                                            val vec = createVector(type, stack.pop())
-                                            val self = stack.pop() as StackValue.NewObject
-                                            stack.replace(self, StackValue.Label(vec))
-                                        }
-                                        "(${fullPrim})V" -> {
-                                            val vec = createVector(type, *stack.popVectorComponents(type))
-                                            val self = stack.pop() as StackValue.NewObject
-                                            stack.replace(self, StackValue.Label(vec))
-                                        }
-                                        "(Lorg/joml/${name}c;)V" -> {
-                                            val vec = createVector(type, stack.pop())
-                                            val self = stack.pop() as StackValue.NewObject
-                                            stack.replace(self, StackValue.Label(vec))
-                                        }
-                                        else -> TODO()
-                                    }
-                                }
-                                else -> TODO()
+                        val pointer = ShaderLabelNode()
+                        val value = ShaderLabelNode()
+                        add(ShaderInsnNode(OP_ACCESS_CHAIN, array.variable.type, pointer, array.variable.label, index))
+                        add(ShaderInsnNode(OP_LOAD, array.variable.type.type.rootType, value, pointer))
+                        stack.push(StackValue.Label(value))
+                    }
+
+                    Opcodes.ISTORE, Opcodes.LSTORE, Opcodes.FSTORE, Opcodes.DSTORE, Opcodes.ASTORE -> {
+                        insn as VarInsnNode
+                        val value = stack.pop()
+
+                        if (value is StackValue.Array) {
+                            val local = getOrLoadLocal(insn.`var`)!!
+
+                            if (local !is Local.NewArray) {
+                                TODO("reassigning arrays?")
+                            }
+
+                            locals[insn.`var`] = Local.Variable(value.variable, local.local)
+
+                            if (value.variable.label.name == null) {
+                                value.variable.label.name = remainingLocals.firstOrNull { it.index == insn.`var` }?.name
+                            }
+                        } else if (value is StackValue.LoadVariable && value.variable.type.type is ShaderBytecodeType.Vector) {
+                            throw JavaShaderCompilationException("Cannot store a mutable ${value.variable.type.type} value from one variable in another, since joml vectors are mutable while glsl vectors are immutable.")
+                        } else {
+                            add(ShaderInsnNode(OP_STORE, getOrLoadLocal(insn.`var`)!!.variable!!.label, value.label!!))
+                        }
+                    }
+                    Opcodes.IASTORE, Opcodes.LASTORE, Opcodes.FASTORE, Opcodes.DASTORE, Opcodes.AASTORE, Opcodes.BASTORE, Opcodes.CASTORE, Opcodes.SASTORE -> {
+                        val value = stack.pop().label!!
+                        val index = stack.pop().label!!
+                        val array = stack.pop() as StackValue.Array
+
+                        val pointer = ShaderLabelNode()
+                        add(ShaderInsnNode(OP_ACCESS_CHAIN, array.variable.type, pointer, array.variable.label, index))
+                        add(ShaderInsnNode(OP_STORE, pointer, value))
+                    }
+
+                    Opcodes.POP -> stack.pop()
+                    Opcodes.POP2 -> {
+                        stack.pop()
+                        stack.pop()
+                    }
+                    Opcodes.DUP -> stack.dup()
+                    Opcodes.DUP_X1, Opcodes.DUP_X2, Opcodes.DUP2, Opcodes.DUP2_X1, Opcodes.DUP2_X2 -> TODO("DUP opcode ${insn.opcode}")
+                    Opcodes.SWAP -> stack.swap()
+
+                    Opcodes.IADD -> math(OP_I_ADD, ShaderBytecodeType.INT)
+                    Opcodes.LADD -> math(OP_I_ADD, ShaderBytecodeType.LONG)
+                    Opcodes.FADD -> math(OP_F_ADD, ShaderBytecodeType.FLOAT)
+                    Opcodes.DADD -> math(OP_F_ADD, ShaderBytecodeType.DOUBLE)
+
+                    Opcodes.ISUB -> math(OP_I_SUB, ShaderBytecodeType.INT)
+                    Opcodes.LSUB -> math(OP_I_SUB, ShaderBytecodeType.LONG)
+                    Opcodes.FSUB -> math(OP_F_SUB, ShaderBytecodeType.FLOAT)
+                    Opcodes.DSUB -> math(OP_F_SUB, ShaderBytecodeType.DOUBLE)
+
+                    Opcodes.IMUL -> math(OP_I_MUL, ShaderBytecodeType.INT)
+                    Opcodes.LMUL -> math(OP_I_MUL, ShaderBytecodeType.LONG)
+                    Opcodes.FMUL -> math(OP_F_MUL, ShaderBytecodeType.FLOAT)
+                    Opcodes.DMUL -> math(OP_F_MUL, ShaderBytecodeType.DOUBLE)
+
+                    Opcodes.IDIV -> math(OP_S_DIV, ShaderBytecodeType.INT)
+                    Opcodes.LDIV -> math(OP_S_DIV, ShaderBytecodeType.LONG)
+                    Opcodes.FDIV -> math(OP_F_DIV, ShaderBytecodeType.FLOAT)
+                    Opcodes.DDIV -> math(OP_F_DIV, ShaderBytecodeType.DOUBLE)
+
+                    Opcodes.IREM -> math(OP_S_REM, ShaderBytecodeType.INT)
+                    Opcodes.LREM -> math(OP_S_REM, ShaderBytecodeType.LONG)
+                    Opcodes.FREM -> math(OP_F_REM, ShaderBytecodeType.FLOAT)
+                    Opcodes.DREM -> math(OP_F_REM, ShaderBytecodeType.DOUBLE)
+
+                    Opcodes.INEG -> mathUnary(OP_S_NEGATE, ShaderBytecodeType.INT)
+                    Opcodes.LNEG -> mathUnary(OP_S_NEGATE, ShaderBytecodeType.LONG)
+                    Opcodes.FNEG -> mathUnary(OP_F_NEGATE, ShaderBytecodeType.FLOAT)
+                    Opcodes.DNEG -> mathUnary(OP_F_NEGATE, ShaderBytecodeType.DOUBLE)
+
+                    Opcodes.ISHL -> math(OP_SHIFT_LEFT_LOGICAL, ShaderBytecodeType.INT)
+                    Opcodes.LSHL -> math(OP_SHIFT_LEFT_LOGICAL, ShaderBytecodeType.LONG)
+                    Opcodes.ISHR -> math(OP_SHIFT_RIGHT_ARITHMETIC, ShaderBytecodeType.INT)
+                    Opcodes.LSHR -> math(OP_SHIFT_RIGHT_ARITHMETIC, ShaderBytecodeType.LONG)
+                    Opcodes.IUSHR -> math(OP_SHIFT_RIGHT_LOGICAL, ShaderBytecodeType.INT)
+                    Opcodes.LUSHR -> math(OP_SHIFT_RIGHT_LOGICAL, ShaderBytecodeType.LONG)
+                    Opcodes.IAND -> math(OP_BITWISE_AND, ShaderBytecodeType.INT)
+                    Opcodes.LAND -> math(OP_BITWISE_AND, ShaderBytecodeType.LONG)
+                    Opcodes.IOR -> math(OP_BITWISE_OR, ShaderBytecodeType.INT)
+                    Opcodes.LOR -> math(OP_BITWISE_OR, ShaderBytecodeType.LONG)
+                    Opcodes.IXOR -> math(OP_BITWISE_XOR, ShaderBytecodeType.INT)
+                    Opcodes.LXOR -> math(OP_BITWISE_XOR, ShaderBytecodeType.LONG)
+
+                    Opcodes.IINC -> {
+                        insn as IincInsnNode
+                        val value = parent.builder.getConstant(ShaderConstant(ShaderBytecodeType.INT, listOf(insn.incr)))
+                        val local = getOrLoadLocal(insn.`var`)!!
+                        val temp = ShaderLabelNode()
+                        val result = ShaderLabelNode()
+
+                        add(ShaderInsnNode(OP_LOAD, local.variable!!.type.type, temp, local.variable!!.label))
+                        function.instructions.add(ShaderInsnNode(OP_I_ADD, local.variable!!.type.type, result, temp, value))
+                        add(ShaderInsnNode(OP_STORE, local.variable!!.label, result))
+                    }
+
+                    Opcodes.I2L -> cast(OP_S_CONVERT, ShaderBytecodeType.LONG)
+                    Opcodes.I2F -> cast(OP_CONVERT_S_TO_F, ShaderBytecodeType.FLOAT)
+                    Opcodes.I2D -> cast(OP_CONVERT_S_TO_F, ShaderBytecodeType.DOUBLE)
+                    Opcodes.L2I -> cast(OP_S_CONVERT, ShaderBytecodeType.INT)
+                    Opcodes.L2F -> cast(OP_CONVERT_S_TO_F, ShaderBytecodeType.FLOAT)
+                    Opcodes.L2D -> cast(OP_CONVERT_S_TO_F, ShaderBytecodeType.DOUBLE)
+                    Opcodes.F2I -> cast(OP_CONVERT_F_TO_S, ShaderBytecodeType.INT)
+                    Opcodes.F2L -> cast(OP_CONVERT_F_TO_S, ShaderBytecodeType.LONG)
+                    Opcodes.F2D -> cast(OP_F_CONVERT, ShaderBytecodeType.DOUBLE)
+                    Opcodes.D2I -> cast(OP_CONVERT_F_TO_S, ShaderBytecodeType.INT)
+                    Opcodes.D2L -> cast(OP_CONVERT_F_TO_S, ShaderBytecodeType.LONG)
+                    Opcodes.D2F -> cast(OP_F_CONVERT, ShaderBytecodeType.FLOAT)
+                    Opcodes.I2B -> cast(OP_S_CONVERT, ShaderBytecodeType.BYTE)
+                    Opcodes.I2C, Opcodes.I2S -> cast(OP_S_CONVERT, ShaderBytecodeType.SHORT)
+
+                    // TODO comparison ops
+                    // TODO jump ops
+                    // TODO RET
+                    // TODO switches
+
+                    Opcodes.IRETURN, Opcodes.LRETURN, Opcodes.FRETURN, Opcodes.DRETURN, Opcodes.ARETURN -> add(ShaderInsnNode(OP_RETURN_VALUE, stack.pop().label!!))
+                    Opcodes.RETURN -> add(ShaderInsnNode(OP_RETURN))
+
+                    Opcodes.GETFIELD -> {
+                        insn as FieldInsnNode
+
+                        parent.getTypeHandler(Type.getObjectType(insn.owner))?.let {
+                            it.handleFieldOp(this@JavaShaderMethodCompiler, insn)
+                            continue
+                        }
+
+                        val target = stack.pop()
+
+                        if (target == StackValue.This) {
+                            parent.variables[insn.name]?.let { v ->
+                                stack.push(StackValue.LoadVariable(this, v))
+                                continue
                             }
                         }
+
+                        TODO("${insn.owner} ${insn.name} ${insn.desc}")
+                    }
+                    Opcodes.PUTFIELD -> {
+                        insn as FieldInsnNode
+
+                        parent.getTypeHandler(Type.getObjectType(insn.owner))?.let {
+                            it.handleFieldOp(this@JavaShaderMethodCompiler, insn)
+                            continue
+                        }
+
+                        val value = stack.pop()
+                        val target = stack.pop()
+
+                        if (target == StackValue.This) {
+                            parent.variables[insn.name]?.let { v ->
+                                add(ShaderInsnNode(OP_STORE, v.label, value.label!!))
+                                continue
+                            }
+                        }
+
+                        TODO("${insn.owner} ${insn.name} ${insn.desc}")
+                    }
+                    // TODO static fields
+
+                    Opcodes.INVOKEVIRTUAL, Opcodes.INVOKESPECIAL, Opcodes.INVOKESTATIC, Opcodes.INVOKEINTERFACE, Opcodes.INVOKEDYNAMIC -> {
+                        insn as MethodInsnNode
 
                         if (insn.owner == parent.node.name) {
                             val node = MethodPointer.method().name(insn.name).desc(insn.desc).findOrThrow(parent.node)
@@ -308,224 +342,41 @@ class JavaShaderMethodCompiler(
                             it.handleMethodCall(this@JavaShaderMethodCompiler, insn)
                             continue
                         }
-
-                        TODO()
                     }
-                    is LdcInsnNode -> {
-                        when (val const = insn.cst) {
-                            is Boolean -> const(ShaderBytecodeType.Bool, const)
-                            is Byte -> const(ShaderBytecodeType.BYTE, const)
-                            is Short -> const(ShaderBytecodeType.SHORT, const)
-                            is Int -> const(ShaderBytecodeType.INT, const)
-                            is Long -> const(ShaderBytecodeType.LONG, const)
-                            is Float -> const(ShaderBytecodeType.FLOAT, const)
-                            is Double -> const(ShaderBytecodeType.DOUBLE, const)
-                            is String -> stack.push(StackValue.StringConstant(const))
-                            else -> TODO("Unsupported constant $const")
-                        }
-                        continue
-                    }
-                    is IntInsnNode -> {
-                        when (insn.opcode) {
-                            Opcodes.BIPUSH, Opcodes.SIPUSH -> const(ShaderBytecodeType.INT, insn.operand)
-                            Opcodes.NEWARRAY -> {
-                                val length = stack.pop()
 
-                                if (length !is StackValue.Constant) {
-                                    throw JavaShaderCompilationException("Cannot create arrays of dynamic size")
-                                }
+                    Opcodes.NEW -> stack.pushNewObject()
+                    Opcodes.NEWARRAY -> {
+                        val length = stack.pop()
 
-                                val type = when (insn.operand) {
-                                    Opcodes.T_BOOLEAN -> ShaderBytecodeType.Bool
-                                    Opcodes.T_BYTE -> ShaderBytecodeType.BYTE
-                                    Opcodes.T_CHAR, Opcodes.T_SHORT -> ShaderBytecodeType.SHORT
-                                    Opcodes.T_INT -> ShaderBytecodeType.INT
-                                    Opcodes.T_LONG -> ShaderBytecodeType.LONG
-                                    Opcodes.T_FLOAT -> ShaderBytecodeType.FLOAT
-                                    Opcodes.T_DOUBLE -> ShaderBytecodeType.DOUBLE
-                                    else -> throw AssertionError()
-                                }
-                                val variable = ShaderVariable(ShaderBytecodeType.Pointer(STORAGE_CLASS_FUNCTION, ShaderBytecodeType.Array(type, length.const.value.first() as Int)))
-                                stack.push(StackValue.Array(variable))
-                                add(ShaderInsnNode(OP_VARIABLE, variable.type, variable.label, variable.type.storageClass, variable.initializer))
-                            }
-                        }
-                        continue
-                    }
-                    is TypeInsnNode -> {
-                        when (insn.opcode) {
-                            Opcodes.NEW -> stack.pushNewObject()
-                            Opcodes.CHECKCAST -> {
-                                val v = stack.peek()
-
-                                if (v is StackValue.LoadVariable) {
-                                    v.variable.javaType?.let { type ->
-                                        if (type.sort == Type.OBJECT) {
-                                            val name = type.internalName
-
-                                            if (name.equals("${insn.desc}c")) {
-                                                throw JavaShaderCompilationException("Illegal cast from an immutable joml class $name to ${insn.desc}")
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            else -> TODO("${insn.opcode}")
-                        }
-                        continue
-                    }
-                    is FieldInsnNode -> {
-                        parent.getTypeHandler(Type.getObjectType(insn.owner))?.let {
-                            it.handleFieldOp(this@JavaShaderMethodCompiler, insn)
-                            continue
+                        if (length !is StackValue.Constant) {
+                            throw JavaShaderCompilationException("Cannot create arrays of dynamic size")
                         }
 
-                        when (insn.opcode) {
-                            Opcodes.GETFIELD -> {
-                                val target = stack.pop()
-
-                                if (target == StackValue.This) {
-                                    parent.variables[insn.name]?.let { v ->
-                                        stack.push(StackValue.LoadVariable(this, v))
-                                        continue
-                                    }
-                                }
-
-                                TODO("${insn.owner} ${insn.name} ${insn.desc}")
-                            }
-                            Opcodes.PUTFIELD -> {
-                                val value = stack.pop()
-                                val target = stack.pop()
-
-                                if (target == StackValue.This) {
-                                    parent.variables[insn.name]?.let { v ->
-                                        add(ShaderInsnNode(OP_STORE, v.label, value.label!!))
-                                        continue
-                                    }
-                                }
-
-                                TODO("${insn.owner} ${insn.name} ${insn.desc}")
-                            }
+                        val type = when ((insn as IntInsnNode).operand) {
+                            Opcodes.T_BOOLEAN -> ShaderBytecodeType.Bool
+                            Opcodes.T_BYTE -> ShaderBytecodeType.BYTE
+                            Opcodes.T_CHAR, Opcodes.T_SHORT -> ShaderBytecodeType.SHORT
+                            Opcodes.T_INT -> ShaderBytecodeType.INT
+                            Opcodes.T_LONG -> ShaderBytecodeType.LONG
+                            Opcodes.T_FLOAT -> ShaderBytecodeType.FLOAT
+                            Opcodes.T_DOUBLE -> ShaderBytecodeType.DOUBLE
+                            else -> throw AssertionError()
                         }
+                        val variable = ShaderVariable(ShaderBytecodeType.Pointer(STORAGE_CLASS_FUNCTION, ShaderBytecodeType.Array(type, length.const.value.first() as Int)))
+                        stack.push(StackValue.Array(variable))
+                        add(ShaderInsnNode(OP_VARIABLE, variable.type, variable.label, variable.type.storageClass, variable.initializer))
                     }
-                    else -> {
-                        when (insn.opcode) {
-                            Opcodes.NOP -> add(ShaderInsnNode(OP_NO_OP))
+                    // TODO ANEWARRAY
+                    // TODO ARRAYLENGTH
+                    // TODO ATHROW
+                    Opcodes.CHECKCAST -> parent.getTypeHandler(Type.getObjectType((insn as TypeInsnNode).desc))?.handleCastFrom(this@JavaShaderMethodCompiler, stack.peek()!!)
+                    // TODO INSTANCEOF
+                    // TODO synchronization
+                    // TODO MULTIANEWARRAY
+                    // TODO null jumps
 
-                            Opcodes.ICONST_0 -> const(ShaderBytecodeType.INT, 0)
-                            Opcodes.ICONST_1 -> const(ShaderBytecodeType.INT, 1)
-                            Opcodes.ICONST_2 -> const(ShaderBytecodeType.INT, 2)
-                            Opcodes.ICONST_3 -> const(ShaderBytecodeType.INT, 3)
-                            Opcodes.ICONST_4 -> const(ShaderBytecodeType.INT, 4)
-                            Opcodes.ICONST_5 -> const(ShaderBytecodeType.INT, 5)
-
-                            Opcodes.LCONST_0 -> const(ShaderBytecodeType.LONG, 0L)
-                            Opcodes.LCONST_1 -> const(ShaderBytecodeType.LONG, 1L)
-
-                            Opcodes.FCONST_0 -> const(ShaderBytecodeType.FLOAT, 0f)
-                            Opcodes.FCONST_1 -> const(ShaderBytecodeType.FLOAT, 1f)
-                            Opcodes.FCONST_2 -> const(ShaderBytecodeType.FLOAT, 2f)
-
-                            Opcodes.DCONST_0 -> const(ShaderBytecodeType.DOUBLE, 0.0)
-                            Opcodes.DCONST_1 -> const(ShaderBytecodeType.DOUBLE, 1.0)
-
-                            Opcodes.IALOAD, Opcodes.LALOAD, Opcodes.FALOAD, Opcodes.DALOAD, Opcodes.AALOAD, Opcodes.BALOAD, Opcodes.CALOAD, Opcodes.SALOAD -> {
-                                val index = stack.pop().label!!
-                                val array = stack.pop() as StackValue.Array
-
-                                val pointer = ShaderLabelNode()
-                                val value = ShaderLabelNode()
-                                add(ShaderInsnNode(OP_ACCESS_CHAIN, array.variable.type, pointer, array.variable.label, index))
-                                add(ShaderInsnNode(OP_LOAD, array.variable.type.type.rootType, value, pointer))
-                                stack.push(StackValue.Label(value))
-                            }
-                            Opcodes.IASTORE, Opcodes.LASTORE, Opcodes.FASTORE, Opcodes.DASTORE, Opcodes.AASTORE, Opcodes.BASTORE, Opcodes.CASTORE, Opcodes.SASTORE -> {
-                                val value = stack.pop().label!!
-                                val index = stack.pop().label!!
-                                val array = stack.pop() as StackValue.Array
-
-                                val pointer = ShaderLabelNode()
-                                add(ShaderInsnNode(OP_ACCESS_CHAIN, array.variable.type, pointer, array.variable.label, index))
-                                add(ShaderInsnNode(OP_STORE, pointer, value))
-                            }
-
-                            Opcodes.POP -> stack.pop()
-                            Opcodes.POP2 -> {
-                                stack.pop()
-                                stack.pop()
-                            }
-                            Opcodes.DUP -> stack.dup()
-                            Opcodes.DUP_X1, Opcodes.DUP_X2, Opcodes.DUP2, Opcodes.DUP2_X1, Opcodes.DUP2_X2 -> TODO("DUP opcode ${insn.opcode}")
-
-                            Opcodes.I2L -> cast(OP_S_CONVERT, ShaderBytecodeType.LONG)
-                            Opcodes.I2F -> cast(OP_CONVERT_S_TO_F, ShaderBytecodeType.FLOAT)
-                            Opcodes.I2D -> cast(OP_CONVERT_S_TO_F, ShaderBytecodeType.DOUBLE)
-                            Opcodes.L2I -> cast(OP_S_CONVERT, ShaderBytecodeType.INT)
-                            Opcodes.L2F -> cast(OP_CONVERT_S_TO_F, ShaderBytecodeType.FLOAT)
-                            Opcodes.L2D -> cast(OP_CONVERT_S_TO_F, ShaderBytecodeType.DOUBLE)
-                            Opcodes.F2I -> cast(OP_CONVERT_F_TO_S, ShaderBytecodeType.INT)
-                            Opcodes.F2L -> cast(OP_CONVERT_F_TO_S, ShaderBytecodeType.LONG)
-                            Opcodes.F2D -> cast(OP_F_CONVERT, ShaderBytecodeType.DOUBLE)
-                            Opcodes.D2I -> cast(OP_CONVERT_F_TO_S, ShaderBytecodeType.INT)
-                            Opcodes.D2L -> cast(OP_CONVERT_F_TO_S, ShaderBytecodeType.LONG)
-                            Opcodes.D2F -> cast(OP_F_CONVERT, ShaderBytecodeType.FLOAT)
-                            Opcodes.I2B -> cast(OP_S_CONVERT, ShaderBytecodeType.BYTE)
-                            Opcodes.I2C, Opcodes.I2S -> cast(OP_S_CONVERT, ShaderBytecodeType.SHORT)
-
-                            Opcodes.IADD -> math(OP_I_ADD, ShaderBytecodeType.INT)
-                            Opcodes.LADD -> math(OP_I_ADD, ShaderBytecodeType.LONG)
-                            Opcodes.FADD -> math(OP_F_ADD, ShaderBytecodeType.FLOAT)
-                            Opcodes.DADD -> math(OP_F_ADD, ShaderBytecodeType.DOUBLE)
-
-                            Opcodes.ISUB -> math(OP_I_SUB, ShaderBytecodeType.INT)
-                            Opcodes.LSUB -> math(OP_I_SUB, ShaderBytecodeType.LONG)
-                            Opcodes.FSUB -> math(OP_F_SUB, ShaderBytecodeType.FLOAT)
-                            Opcodes.DSUB -> math(OP_F_SUB, ShaderBytecodeType.DOUBLE)
-
-                            Opcodes.IMUL -> math(OP_I_MUL, ShaderBytecodeType.INT)
-                            Opcodes.LMUL -> math(OP_I_MUL, ShaderBytecodeType.LONG)
-                            Opcodes.FMUL -> math(OP_F_MUL, ShaderBytecodeType.FLOAT)
-                            Opcodes.DMUL -> math(OP_F_MUL, ShaderBytecodeType.DOUBLE)
-
-                            Opcodes.IDIV -> math(OP_S_DIV, ShaderBytecodeType.INT)
-                            Opcodes.LDIV -> math(OP_S_DIV, ShaderBytecodeType.LONG)
-                            Opcodes.FDIV -> math(OP_F_DIV, ShaderBytecodeType.FLOAT)
-                            Opcodes.DDIV -> math(OP_F_DIV, ShaderBytecodeType.DOUBLE)
-
-                            Opcodes.IREM -> math(OP_S_REM, ShaderBytecodeType.INT)
-                            Opcodes.LREM -> math(OP_S_REM, ShaderBytecodeType.LONG)
-                            Opcodes.FREM -> math(OP_F_REM, ShaderBytecodeType.FLOAT)
-                            Opcodes.DREM -> math(OP_F_REM, ShaderBytecodeType.DOUBLE)
-
-                            Opcodes.INEG -> mathUnary(OP_S_NEGATE, ShaderBytecodeType.INT)
-                            Opcodes.LNEG -> mathUnary(OP_S_NEGATE, ShaderBytecodeType.LONG)
-                            Opcodes.FNEG -> mathUnary(OP_F_NEGATE, ShaderBytecodeType.FLOAT)
-                            Opcodes.DNEG -> mathUnary(OP_F_NEGATE, ShaderBytecodeType.DOUBLE)
-
-                            Opcodes.ISHL -> math(OP_SHIFT_LEFT_LOGICAL, ShaderBytecodeType.INT)
-                            Opcodes.LSHL -> math(OP_SHIFT_LEFT_LOGICAL, ShaderBytecodeType.LONG)
-                            Opcodes.ISHR -> math(OP_SHIFT_RIGHT_ARITHMETIC, ShaderBytecodeType.INT)
-                            Opcodes.LSHR -> math(OP_SHIFT_RIGHT_ARITHMETIC, ShaderBytecodeType.LONG)
-                            Opcodes.IUSHR -> math(OP_SHIFT_RIGHT_LOGICAL, ShaderBytecodeType.INT)
-                            Opcodes.LUSHR -> math(OP_SHIFT_RIGHT_LOGICAL, ShaderBytecodeType.LONG)
-                            Opcodes.IAND -> math(OP_BITWISE_AND, ShaderBytecodeType.INT)
-                            Opcodes.LAND -> math(OP_BITWISE_AND, ShaderBytecodeType.LONG)
-                            Opcodes.IOR -> math(OP_BITWISE_OR, ShaderBytecodeType.INT)
-                            Opcodes.LOR -> math(OP_BITWISE_OR, ShaderBytecodeType.LONG)
-                            Opcodes.IXOR -> math(OP_BITWISE_XOR, ShaderBytecodeType.INT)
-                            Opcodes.LXOR -> math(OP_BITWISE_XOR, ShaderBytecodeType.LONG)
-                            // TODO rest of math opcodes
-
-                            Opcodes.RETURN -> add(ShaderInsnNode(OP_RETURN))
-                            Opcodes.IRETURN, Opcodes.LRETURN, Opcodes.FRETURN, Opcodes.DRETURN, Opcodes.ARETURN -> add(ShaderInsnNode(OP_RETURN_VALUE, stack.pop().label!!))
-
-                            else -> TODO("${insn.opcode}")
-                        }
-                        continue
-                    }
+                    else -> TODO("${insn.opcode}")
                 }
-
-                TODO("unsupported op $insn ${insn.opcode}")
             }
 
             if (!stack.isEmpty()) {
@@ -592,6 +443,11 @@ class JavaShaderMethodCompiler(
 
         fun dup() {
             contents.add(contents.last().also { println("${contents.size + 1} dup $it") })
+        }
+
+        fun swap() {
+            val last = contents.removeLast()
+            contents.add(contents.size - 1, last)
         }
 
         fun peek() = contents.lastOrNull()

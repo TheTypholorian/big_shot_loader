@@ -246,6 +246,10 @@ abstract class JomlVectorTypeHandler(
         }
     }
 
+    override fun handleCastFrom(compiler: JavaShaderMethodCompiler, from: StackValue) {
+        // TODO error on illegal cast
+    }
+
     override fun createLocalVariable(
         compiler: JavaShaderMethodCompiler,
         local: LocalVariableNode,

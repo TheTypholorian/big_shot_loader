@@ -29,8 +29,11 @@ class TestVertexShader : JavaShader.Vertex() {
     }
 
     override fun main() {
+        var i = 0
+        i++
+
         val vec = Vector3f(pos)
-        vec.x = 10f
+        vec.x = 10f + i
         outPos = add(vec, pos2)
     }
 }

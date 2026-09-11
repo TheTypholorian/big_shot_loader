@@ -28,4 +28,7 @@ object KotlinIntrinsicsTypeHandler : JavaShaderTypeHandler, JavaShaderTypeHandle
             compiler.stack.pop()
         }
     }
+
+    override fun handleCastFrom(compiler: JavaShaderMethodCompiler, from: JavaShaderMethodCompiler.StackValue) {
+    }
 }
