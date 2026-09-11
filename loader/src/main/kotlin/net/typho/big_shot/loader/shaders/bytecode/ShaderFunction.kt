@@ -11,5 +11,5 @@ data class ShaderFunction @JvmOverloads constructor(
     @JvmField
     val instructions = mutableListOf<ShaderInsnNode>()
 
-    fun call(result: ShaderLabelNode, parameters: List<Any>) = ShaderInsnNode(OP_FUNCTION_CALL, type.returnType, result, this, parameters)
+    fun call(result: ShaderLabelNode, vararg args: ShaderLabelNode) = ShaderInsnNode(OP_FUNCTION_CALL, type.returnType, result, label, *args)
 }

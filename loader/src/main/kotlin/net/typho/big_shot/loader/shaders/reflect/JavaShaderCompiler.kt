@@ -30,19 +30,6 @@ class JavaShaderCompiler(
 
     override fun getTypeHandler(type: Type) = typeHandlers.firstNotNullOfOrNull { it.getTypeHandler(type) }
 
-    fun getOrCompileMethod(node: MethodNode): ShaderFunction {
-        return functions[node] ?: compileMethod(node).also {
-            builder.functions.add(it)
-            functions[node] = it
-        }
-    }
-
-    fun compileMethod(node: MethodNode): ShaderFunction {
-        val compiler = JavaShaderMethodCompiler(this, node)
-        compiler.compile()
-        return compiler.function
-    }
-
     fun compileField(node: FieldNode): ShaderVariable? {
         var storageClass: Int? = null
         var name = node.name
@@ -95,8 +82,13 @@ class JavaShaderCompiler(
             field
         }
 
-        val main = getOrCompileMethod(MethodPointer.method().name("main").desc("()V").findOrThrow(node))
+        node.methods.filterNot { it.name == "<init>" || it.name == "<clinit>" /* TODO */ }.map { node ->
+            val function = ShaderFunction(ShaderBytecodeType.convertJavaType(Type.getMethodType(node.desc)) as ShaderBytecodeType.Function, label = ShaderLabelNode(node.name))
+            functions[node] = function
+            builder.functions.add(function)
+            JavaShaderMethodCompiler(this, node, function)
+        }.forEach { it.compile() }
 
-        return builder.build(main)
+        return builder.build(functions[MethodPointer.method().name("main").desc("()V").findOrThrow(node)]!!)
     }
 }

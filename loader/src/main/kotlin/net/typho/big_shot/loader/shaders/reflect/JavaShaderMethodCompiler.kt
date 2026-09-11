@@ -21,14 +21,14 @@ class JavaShaderMethodCompiler(
     @JvmField
     val parent: JavaShaderCompiler,
     @JvmField
-    val node: MethodNode
+    val node: MethodNode,
+    @JvmField
+    val function: ShaderFunction
 ) {
     @JvmField
     val stack = Stack()
     @JvmField
     val locals = mutableMapOf<Int, Local>()
-    @JvmField
-    val function = ShaderFunction(ShaderBytecodeType.convertJavaType(Type.getMethodType(node.desc)) as ShaderBytecodeType.Function, label = ShaderLabelNode(node.name))
     private var remainingLocals = node.localVariables?.toMutableList() ?: mutableListOf()
 
     fun loadLocal(local: LocalVariableNode): Local {
@@ -67,8 +67,20 @@ class JavaShaderMethodCompiler(
         stack.clear()
         locals.clear()
         remainingLocals = node.localVariables?.toMutableList() ?: mutableListOf()
+
+        if (node.access and Opcodes.ACC_STATIC == 0) {
+            getOrLoadLocal(0)
+        }
+
         function.instructions.clear()
         function.instructions.apply {
+            repeat(Type.getArgumentCount(node.desc)) {
+                val local = remainingLocals.removeFirst()
+                val label = ShaderLabelNode(local.name)
+                function.instructions.add(ShaderInsnNode(OP_FUNCTION_PARAMETER, ShaderBytecodeType.convertJavaType(Type.getType(local.desc)), label))
+                locals[local.index] = Local.Argument(label, local)
+            }
+
             function.instructions.add(ShaderInsnNode(OP_LABEL, ShaderLabelNode()))
 
             for (insn in node.instructions) {
@@ -252,7 +264,7 @@ class JavaShaderMethodCompiler(
                                             stack.replace(self, StackValue.Label(vec))
                                         }
                                         "(${prim})V" -> {
-                                            val vec = createVector(type, *stack.popSingleVectorComponent(type))
+                                            val vec = createVector(type, stack.pop())
                                             val self = stack.pop() as StackValue.NewObject
                                             stack.replace(self, StackValue.Label(vec))
                                         }
@@ -275,7 +287,7 @@ class JavaShaderMethodCompiler(
 
                         if (insn.owner == parent.node.name) {
                             val node = MethodPointer.method().name(insn.name).desc(insn.desc).findOrThrow(parent.node)
-                            val func = parent.getOrCompileMethod(node)
+                            val func = parent.functions[node]!!
                             val args = Array(Type.getArgumentCount(insn.desc)) { stack.pop().label!! }.reversedArray()
 
                             if (stack.pop() != StackValue.This) {
@@ -283,8 +295,11 @@ class JavaShaderMethodCompiler(
                             }
 
                             val result = ShaderLabelNode()
-                            add(ShaderInsnNode(OP_FUNCTION_CALL, func.type.returnType, result, func.type, *args))
-                            stack.push(StackValue.Label(result))
+                            add(func.call(result, *args))
+
+                            if (Type.getReturnType(insn.desc).sort != Type.VOID) {
+                                stack.push(StackValue.Label(result))
+                            }
 
                             continue
                         }
@@ -569,11 +584,6 @@ class JavaShaderMethodCompiler(
         fun pop() = contents.removeLast().also { println("${contents.size} popped $it") }
 
         fun popVectorComponents(type: ShaderBytecodeType.Vector): Array<StackValue> = Array(type.componentCount) { pop() }.reversedArray()
-
-        fun popSingleVectorComponent(type: ShaderBytecodeType.Vector): Array<StackValue> {
-            val v = pop()
-            return Array(type.componentCount) { v }
-        }
 
         fun dup() {
             contents.add(contents.last().also { println("${contents.size + 1} dup $it") })

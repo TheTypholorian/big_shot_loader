@@ -17,7 +17,7 @@ class TestVertexShader : JavaShader.Vertex() {
     @Input
     @Location(1)
     @JvmField
-    var pos2: Vector3dc = Vector3d()
+    var pos2: Vector3fc = Vector3f()
 
     @Output
     @Location(0)
@@ -29,7 +29,7 @@ class TestVertexShader : JavaShader.Vertex() {
     }
 
     override fun main() {
-        outPos = add(pos, Vector3f(pos2))
+        outPos = add(pos, pos2)
     }
 }
 

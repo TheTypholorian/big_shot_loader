@@ -70,7 +70,7 @@ object ShaderBuilderTest {
 
         val shader = TestVertexShader()
         shader.pos = Vector3f(1f, 2f, 3f)
-        shader.pos2 = Vector3d(-10.0, -5.0, 20.0)
+        shader.pos2 = Vector3f(-10f, -5f, 20f)
         shader.main()
         println("output: ${Vector3f(shader.outPos).toString(NumberFormat.getInstance())}")
 

@@ -145,6 +145,10 @@ abstract class JomlVectorTypeHandler(
             }
         }
 
+        fun JavaShaderMethodCompiler.createVector(type: ShaderBytecodeType.Vector, value: StackValue): ShaderLabelNode {
+            return createVector(type, *Array(type.componentCount) { value })
+        }
+
         fun JavaShaderMethodCompiler.createVector(type: ShaderBytecodeType.Vector, vararg values: StackValue): ShaderLabelNode {
             return if (values.all { it is StackValue.Constant }) {
                 parent.builder.getConstant(ShaderConstant(type, values.map { it.label!! }))
@@ -172,6 +176,10 @@ abstract class JomlVectorTypeHandler(
 
         fun JavaShaderMethodCompiler.vectorOpSelf(opcode: Int, type: ShaderBytecodeType.Vector, add: ShaderLabelNode, self: StackValue) {
             vectorOp(opcode, type, self, add, self.label!!)
+        }
+
+        fun JavaShaderMethodCompiler.vectorInit(type: ShaderBytecodeType.Vector, value: StackValue) {
+            vectorInit(type, *Array(type.componentCount) { value })
         }
 
         fun JavaShaderMethodCompiler.vectorInit(type: ShaderBytecodeType.Vector, vararg values: StackValue) {
@@ -235,11 +243,11 @@ abstract class JomlVectorTypeHandler(
 
     protected open fun handleSimpleOp(compiler: JavaShaderMethodCompiler, opcode: Int, desc: String): Boolean {
         when (desc) {
-            opSinglePrimDestDesc -> compiler.vectorOp(opcode, type, compiler.stack.pop(), compiler.createVector(type, *compiler.stack.popSingleVectorComponent(type)), compiler.stack.pop().label!!)
+            opSinglePrimDestDesc -> compiler.vectorOp(opcode, type, compiler.stack.pop(), compiler.createVector(type, compiler.stack.pop()), compiler.stack.pop().label!!)
             opPrimDestDesc -> compiler.vectorOp(opcode, type, compiler.stack.pop(), compiler.createVector(type, *compiler.stack.popVectorComponents(type)), compiler.stack.pop().label!!)
             opImmutableDestDesc -> compiler.vectorOp(opcode, type, compiler.stack.pop(), compiler.stack.pop().label!!, compiler.stack.pop().label!!)
 
-            opSinglePrimSelfDesc -> compiler.vectorOpSelf(opcode, type, compiler.createVector(type, *compiler.stack.popSingleVectorComponent(type)), compiler.stack.pop())
+            opSinglePrimSelfDesc -> compiler.vectorOpSelf(opcode, type, compiler.createVector(type, compiler.stack.pop()), compiler.stack.pop())
             opPrimSelfDesc -> compiler.vectorOpSelf(opcode, type, compiler.createVector(type, *compiler.stack.popVectorComponents(type)), compiler.stack.pop())
             opImmutableSelfDesc -> compiler.vectorOpSelf(opcode, type, compiler.stack.pop().label!!, compiler.stack.pop())
 
@@ -265,7 +273,7 @@ abstract class JomlVectorTypeHandler(
     protected open fun handleConstructor(compiler: JavaShaderMethodCompiler, desc: String): Boolean {
         when (desc) {
             "()V" -> handleNoArgVector(compiler)
-            voidSinglePrimDesc -> compiler.vectorInit(type, *compiler.stack.popSingleVectorComponent(type))
+            voidSinglePrimDesc -> compiler.vectorInit(type, compiler.stack.pop())
             voidPrimDesc -> compiler.vectorInit(type, *compiler.stack.popVectorComponents(type))
             voidImmutableDesc -> compiler.vectorInit(type, compiler.stack.pop())
             voidPrimArrayDesc -> {
