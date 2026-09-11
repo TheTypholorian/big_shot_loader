@@ -2,7 +2,9 @@ package net.typho.big_shot.loader.shaders.reflect
 
 import net.typho.big_shot.loader.shaders.bytecode.*
 import net.typho.big_shot.loader.shaders.reflect.JavaShaderMethodCompiler.StackValue
+import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
+import org.objectweb.asm.tree.FieldInsnNode
 import org.objectweb.asm.tree.LocalVariableNode
 import org.objectweb.asm.tree.MethodInsnNode
 
@@ -145,10 +147,6 @@ abstract class JomlVectorTypeHandler(
             }
         }
 
-        fun JavaShaderMethodCompiler.createVector(type: ShaderBytecodeType.Vector, value: StackValue): ShaderLabelNode {
-            return createVector(type, *Array(type.componentCount) { value })
-        }
-
         fun JavaShaderMethodCompiler.createVector(type: ShaderBytecodeType.Vector, vararg values: StackValue): ShaderLabelNode {
             return if (values.all { it is StackValue.Constant }) {
                 parent.builder.getConstant(ShaderConstant(type, values.map { it.label!! }))
@@ -156,6 +154,12 @@ abstract class JomlVectorTypeHandler(
                 val result = ShaderLabelNode()
                 function.instructions.add(ShaderInsnNode(OP_COMPOSITE_CONSTRUCT, type, result, values.map { it.label }))
                 result
+            }
+        }
+
+        fun JavaShaderMethodCompiler.vectorStore(result: ShaderLabelNode, dest: StackValue) {
+            if (dest is StackValue.LoadVariable) {
+                function.instructions.add(ShaderInsnNode(OP_STORE, dest.variable.label, result))
             }
         }
 
@@ -176,10 +180,6 @@ abstract class JomlVectorTypeHandler(
 
         fun JavaShaderMethodCompiler.vectorOpSelf(opcode: Int, type: ShaderBytecodeType.Vector, add: ShaderLabelNode, self: StackValue) {
             vectorOp(opcode, type, self, add, self.label!!)
-        }
-
-        fun JavaShaderMethodCompiler.vectorInit(type: ShaderBytecodeType.Vector, value: StackValue) {
-            vectorInit(type, *Array(type.componentCount) { value })
         }
 
         fun JavaShaderMethodCompiler.vectorInit(type: ShaderBytecodeType.Vector, vararg values: StackValue) {
@@ -214,6 +214,20 @@ abstract class JomlVectorTypeHandler(
     @JvmField
     val opImmutableSelfDesc = Type.getMethodDescriptor(mutableClassType, immutableClassType)
 
+    override fun handleFieldOp(compiler: JavaShaderMethodCompiler, op: FieldInsnNode) {
+        val success = when (op.name) {
+            "x" -> handleComponentOp(compiler, op, 0)
+            "y" -> handleComponentOp(compiler, op, 1)
+            "z" -> handleComponentOp(compiler, op, 2)
+            "w" -> handleComponentOp(compiler, op, 3)
+            else -> false
+        }
+
+        if (!success) {
+            throw JavaShaderCompilationException("Unsupported field ${op.owner}.${op.name} ${op.desc}")
+        }
+    }
+
     override fun handleMethodCall(
         compiler: JavaShaderMethodCompiler,
         call: MethodInsnNode
@@ -239,6 +253,34 @@ abstract class JomlVectorTypeHandler(
         type: ShaderBytecodeType
     ): ShaderVariable? {
         return null
+    }
+
+    protected open fun handleComponentOp(compiler: JavaShaderMethodCompiler, op: FieldInsnNode, index: Int): Boolean {
+        if (index < 0 || index >= type.componentCount) {
+            return false
+        }
+
+        when (op.opcode) {
+            Opcodes.GETFIELD -> {
+                val vector = compiler.stack.pop().label!!
+
+                val result = ShaderLabelNode()
+                compiler.function.instructions.add(ShaderInsnNode(OP_COMPOSITE_EXTRACT, type, result, vector))
+                compiler.stack.push(StackValue.Label(result))
+                return true
+            }
+            Opcodes.PUTFIELD -> {
+                val value = compiler.stack.pop().label!!
+                val vector = compiler.stack.pop().label!!
+
+                val ptr = ShaderLabelNode()
+                compiler.function.instructions.add(ShaderInsnNode(OP_ACCESS_CHAIN, ShaderBytecodeType.Pointer(STORAGE_CLASS_FUNCTION, type.componentType), ptr, vector, compiler.parent.builder.getConstant(ShaderConstant(ShaderBytecodeType.INT, listOf(index)))))
+                compiler.function.instructions.add(ShaderInsnNode(OP_STORE, ptr, value))
+                return true
+            }
+        }
+
+        return false
     }
 
     protected open fun handleSimpleOp(compiler: JavaShaderMethodCompiler, opcode: Int, desc: String): Boolean {

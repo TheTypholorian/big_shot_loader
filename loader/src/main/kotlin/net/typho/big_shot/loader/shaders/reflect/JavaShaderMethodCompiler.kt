@@ -297,7 +297,7 @@ class JavaShaderMethodCompiler(
                             val result = ShaderLabelNode()
                             add(func.call(result, *args))
 
-                            if (Type.getReturnType(insn.desc).sort != Type.VOID) {
+                            if (func.type.returnType != ShaderBytecodeType.Void) {
                                 stack.push(StackValue.Label(result))
                             }
 
@@ -375,6 +375,11 @@ class JavaShaderMethodCompiler(
                         continue
                     }
                     is FieldInsnNode -> {
+                        parent.getTypeHandler(Type.getObjectType(insn.owner))?.let {
+                            it.handleFieldOp(this@JavaShaderMethodCompiler, insn)
+                            continue
+                        }
+
                         when (insn.opcode) {
                             Opcodes.GETFIELD -> {
                                 val target = stack.pop()
