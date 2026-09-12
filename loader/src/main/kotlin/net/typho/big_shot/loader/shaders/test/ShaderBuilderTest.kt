@@ -24,9 +24,11 @@ object ShaderBuilderTest {
             
             void main()
             {
-                vec3 pos1 = pos;
-                pos1.x = 10;
-                outPos = vec3(mod(pos1, 10));
+                int i = 0;
+                
+                for (int j = 0; j < 10; j++) {
+                    i++;
+                }
             }
         """.trimIndent()
         val buffer = ShaderBytecodeUtils.glslToSpirV(testGlsl, ShaderType.VERTEX)
@@ -73,7 +75,7 @@ object ShaderBuilderTest {
         val shader = TestVertexShader()
         shader.pos = Vector3f(1f, 2f, 3f)
         shader.pos2 = Vector3f(-10f, -5f, 20f)
-        shader.main()
+        //shader.main()
         println("output: ${Vector3f(shader.outPos).toString(NumberFormat.getInstance())}")
 
         val reader = ClassReader(File("loader/build/classes/kotlin/main/net/typho/big_shot/loader/shaders/test/TestVertexShader.class").absoluteFile.readBytes())

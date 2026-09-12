@@ -5,7 +5,6 @@ import net.typho.big_shot.loader.shaders.reflect.JavaShaderMethodCompiler.StackV
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.FieldInsnNode
-import org.objectweb.asm.tree.LocalVariableNode
 import org.objectweb.asm.tree.MethodInsnNode
 
 abstract class JomlVectorTypeHandler(
@@ -252,7 +251,6 @@ abstract class JomlVectorTypeHandler(
 
     override fun createLocalVariable(
         compiler: JavaShaderMethodCompiler,
-        local: LocalVariableNode,
         javaType: Type,
         type: ShaderBytecodeType
     ): ShaderVariable? {

@@ -4,7 +4,6 @@ import net.typho.big_shot.loader.shaders.bytecode.ShaderBytecodeType
 import net.typho.big_shot.loader.shaders.bytecode.ShaderVariable
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.FieldInsnNode
-import org.objectweb.asm.tree.LocalVariableNode
 import org.objectweb.asm.tree.MethodInsnNode
 
 interface JavaShaderTypeHandler {
@@ -14,7 +13,7 @@ interface JavaShaderTypeHandler {
 
     fun handleCastFrom(compiler: JavaShaderMethodCompiler, from: JavaShaderMethodCompiler.StackValue)
 
-    fun createLocalVariable(compiler: JavaShaderMethodCompiler, local: LocalVariableNode, javaType: Type, type: ShaderBytecodeType): ShaderVariable? {
+    fun createLocalVariable(compiler: JavaShaderMethodCompiler, javaType: Type, type: ShaderBytecodeType): ShaderVariable? {
         return null
     }
 

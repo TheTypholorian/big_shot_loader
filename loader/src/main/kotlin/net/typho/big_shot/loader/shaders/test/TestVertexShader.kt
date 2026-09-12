@@ -5,6 +5,7 @@ import org.joml.Vector3d
 import org.joml.Vector3dc
 import org.joml.Vector3f
 import org.joml.Vector3fc
+import kotlin.io.path.Path
 
 class TestVertexShader : JavaShader.Vertex() {
     //@Import
@@ -24,17 +25,12 @@ class TestVertexShader : JavaShader.Vertex() {
     @JvmField
     var outPos: Vector3fc = Vector3f()
 
-    fun add(a: Vector3fc, b: Vector3fc): Vector3fc {
-        return a.add(b, Vector3f())
-    }
-
     override fun main() {
         var i = 0
-        i++
 
-        val vec = Vector3f(pos)
-        vec.x = 10f + i
-        outPos = add(vec, pos2)
+        repeat(10) {
+            i++
+        }
     }
 }
 
