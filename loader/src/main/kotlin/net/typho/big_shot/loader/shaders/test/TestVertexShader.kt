@@ -26,21 +26,17 @@ class TestVertexShader : JavaShader.Vertex() {
     var outPos: Vector3fc = Vector3f()
 
     override fun main() {
-        var i = 0
-
         val vec = Vector3f(pos)
 
         if (vec.x > 10) {
-            i += 2
+            var f = 10f
+            f++
         } else {
-            i += 40
-        }
-
-        /*
-        repeat(10) {
+            var i = 10
             i++
         }
-         */
+
+        vec.x = 10f
     }
 }
 

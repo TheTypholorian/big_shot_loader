@@ -35,8 +35,16 @@ class JavaShaderMethodCompiler(
     val locals = mutableMapOf<Int, Local>()
     private val jumpTargets = mutableMapOf<LabelNode, ShaderLabelNode>()
 
-    fun loadLocal(index: Int, type: ShaderBytecodeType): Local {
-        println("loading local $index")
+    fun loadLocal(index: Int, type: ShaderBytecodeType, old: Local?): Local {
+        if (type is ShaderBytecodeType.Pointer) {
+            throw IllegalArgumentException()
+        }
+
+        if (old?.type == type) {
+            return old
+        }
+
+        println("loading local $index $type $old")
 
         return if (type is ShaderBytecodeType.Array) {
             Local.NewArray(type)
@@ -47,7 +55,7 @@ class JavaShaderMethodCompiler(
         }
     }
 
-    fun getOrLoadLocal(index: Int, type: ShaderBytecodeType) = locals.computeIfAbsent(index) { loadLocal(index, type) }
+    fun getOrLoadLocal(index: Int, type: ShaderBytecodeType) = locals.compute(index) { key, local -> loadLocal(index, type, local) }!!
 
     fun compile() {
         stack.clear()
@@ -77,11 +85,20 @@ class JavaShaderMethodCompiler(
                 when (insn.opcode) {
                     -1 -> {
                         if (insn is LabelNode) {
-                            //jumpTargets.computeIfAbsent(insn) { ShaderLabelNode() }?.let {
-                            jumpTargets[insn]?.let {
-                                add(ShaderInsnNode(OP_BRANCH, it))
-                                add(ShaderInsnNode(OP_LABEL, it))
-                            }
+                            val prev = lastOrNull()
+
+                            add(object : ShaderFunction.Instruction {
+                                override fun write(builder: ShaderBytecodeBuilder, buffer: ExpandingByteBuffer) {
+                                    jumpTargets[insn]?.let {
+                                        // TODO this feels brittle but seems to work for now
+                                        if ((prev as? ShaderInsnNode)?.opcode != OP_BRANCH) {
+                                            ShaderInsnNode(OP_BRANCH, it).write(builder, buffer)
+                                        }
+
+                                        ShaderInsnNode(OP_LABEL, it).write(builder, buffer)
+                                    }
+                                }
+                            })
                         }
                     }
 
@@ -521,7 +538,7 @@ class JavaShaderMethodCompiler(
                 ShaderLabelNode().also { instructions.add(ShaderInsnNode(OP_LOAD, variable.type.type, it, variable.label)) }
             }
             override val type: ShaderBytecodeType
-                get() = variable.type
+                get() = variable.type.type
 
             override fun equals(other: Any?): Boolean {
                 if (this === other) return true
@@ -571,7 +588,7 @@ class JavaShaderMethodCompiler(
             val variable: ShaderVariable
         ) : StackValue {
             override val type: ShaderBytecodeType
-                get() = variable.type
+                get() = variable.type.type
         }
 
         data class NewObject(
@@ -596,6 +613,9 @@ class JavaShaderMethodCompiler(
     }
 
     sealed interface Local {
+        val type: ShaderBytecodeType?
+            get() = null
+
         fun load(compiler: JavaShaderMethodCompiler): StackValue? = null
 
         fun store(compiler: JavaShaderMethodCompiler, value: StackValue): Unit? = null
@@ -604,6 +624,9 @@ class JavaShaderMethodCompiler(
             @JvmField
             val variable: ShaderVariable
         ) : Local {
+            override val type: ShaderBytecodeType
+                get() = variable.type.type
+
             override fun load(compiler: JavaShaderMethodCompiler) = StackValue.LoadVariable(compiler.function.instructions, variable)
 
             override fun store(compiler: JavaShaderMethodCompiler, value: StackValue) {
@@ -614,8 +637,7 @@ class JavaShaderMethodCompiler(
         data class Argument(
             @JvmField
             val label: ShaderLabelNode,
-            @JvmField
-            val type: ShaderBytecodeType
+            override val type: ShaderBytecodeType
         ) : Local {
             override fun load(compiler: JavaShaderMethodCompiler) = StackValue.Label(label, type)
 
@@ -625,8 +647,7 @@ class JavaShaderMethodCompiler(
         }
 
         data class NewArray(
-            @JvmField
-            val type: ShaderBytecodeType.Array
+            override val type: ShaderBytecodeType.Array
         ) : Local
 
         object This : Local

@@ -259,7 +259,7 @@ abstract class JomlVectorTypeHandler(
                 val vector = compiler.stack.pop().label!!
 
                 val result = ShaderLabelNode()
-                compiler.function.instructions.add(ShaderInsnNode(OP_COMPOSITE_EXTRACT, type, result, vector))
+                compiler.function.instructions.add(ShaderInsnNode(OP_COMPOSITE_EXTRACT, type, result, vector, index))
                 compiler.stack.push(StackValue.Label(result, type.componentType))
                 return true
             }

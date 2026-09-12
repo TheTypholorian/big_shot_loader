@@ -285,6 +285,12 @@ sealed interface ShaderBytecodeType {
         override val javaType: Type?
             get() = type.javaType
 
+        init {
+            if (type is Pointer) {
+                throw IllegalArgumentException("Passed a pointer type to a pointer")
+            }
+        }
+
         override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_POINTER, result, storageClass, type)
         }
