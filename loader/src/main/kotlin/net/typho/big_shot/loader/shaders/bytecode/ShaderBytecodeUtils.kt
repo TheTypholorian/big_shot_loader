@@ -1,6 +1,5 @@
 package net.typho.big_shot.loader.shaders.bytecode
 
-import com.sun.tools.javac.code.Lint.LintCategory.options
 import net.typho.big_shot.loader.shaders.ShaderType
 import net.typho.big_shot.loader.shaders.error.ShadercException
 import net.typho.big_shot.loader.shaders.error.SpvcException

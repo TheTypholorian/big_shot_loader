@@ -23,7 +23,7 @@ class ShaderBytecodeBuilder(
     @JvmField
     val variables = mutableListOf<ShaderVariable>()
     @JvmField
-    val functions = mutableListOf<ShaderFunction>()
+    val functions = mutableListOf<ShaderFunction<*>>()
 
     fun getType(type: ShaderBytecodeType) = types.computeIfAbsent(type) { it.createLabelNode() }
 
@@ -31,7 +31,7 @@ class ShaderBytecodeBuilder(
 
     fun import(name: String) = imports.computeIfAbsent(name) { ShaderLabelNode(name) }
 
-    fun build(entrypoint: ShaderFunction): ByteBuffer {
+    fun build(entrypoint: ShaderFunction<*>): ByteBuffer {
         val header = ExpandingByteBuffer(256)
         header.expand(28)
             .putInt(SPIRV_MAGIC)
@@ -65,7 +65,7 @@ class ShaderBytecodeBuilder(
 
         for (func in functions) {
             ShaderInsnNode(OP_FUNCTION, func.type.returnType, func.label, func.controlMask, func.type).flatten(this).get(body, true)
-            func.instructions.forEach { it.flatten(this).get(body, true) }
+            func.instructions.forEach { it.write(this, body) }
             ShaderInsnNode(OP_FUNCTION_END).get(body, true)
         }
 

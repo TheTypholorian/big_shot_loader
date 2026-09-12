@@ -9,7 +9,7 @@ data class ShaderInsnNode(
     val opcode: Int,
     @JvmField
     val values: List<Any>
-) {
+) : ShaderFunction.Instruction {
     constructor(opcode: Int, vararg values: Any?) : this(opcode, values.filterNotNull())
 
     val words by lazy {
@@ -27,6 +27,10 @@ data class ShaderInsnNode(
         }
 
         words
+    }
+
+    override fun write(builder: ShaderBytecodeBuilder, buffer: ExpandingByteBuffer) {
+        return flatten(builder).get(buffer, true) // TODO
     }
 
     @JvmOverloads

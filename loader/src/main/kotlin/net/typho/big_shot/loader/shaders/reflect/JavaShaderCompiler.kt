@@ -26,7 +26,7 @@ class JavaShaderCompiler(
     @JvmField
     val variables = mutableMapOf<String, ShaderVariable>()
     @JvmField
-    val functions = mutableMapOf<MethodNode, ShaderFunction>()
+    val functions = mutableMapOf<MethodNode, ShaderFunction<*>>()
 
     override fun getTypeHandler(type: Type) = typeHandlers.firstNotNullOfOrNull { it.getTypeHandler(type) }
 
@@ -63,7 +63,7 @@ class JavaShaderCompiler(
         type ?: return null
         val shaderType = ShaderBytecodeType.convertJavaType(type)
 
-        return ShaderVariable(ShaderBytecodeType.Pointer(storageClass, shaderType), javaType = type, label = ShaderLabelNode(name), location = location)
+        return ShaderVariable(ShaderBytecodeType.Pointer(storageClass, shaderType), label = ShaderLabelNode(name), location = location)
     }
 
     fun compile(): ByteBuffer {
@@ -83,7 +83,7 @@ class JavaShaderCompiler(
         }
 
         node.methods.filterNot { it.name == "<init>" || it.name == "<clinit>" /* TODO */ }.map { node ->
-            val function = ShaderFunction(ShaderBytecodeType.convertJavaType(Type.getMethodType(node.desc)) as ShaderBytecodeType.Function, label = ShaderLabelNode(node.name))
+            val function = ShaderFunction<ShaderFunction.Instruction>(ShaderBytecodeType.convertJavaType(Type.getMethodType(node.desc)) as ShaderBytecodeType.Function, label = ShaderLabelNode(node.name))
             functions[node] = function
             builder.functions.add(function)
             JavaShaderMethodCompiler(this, node, function)

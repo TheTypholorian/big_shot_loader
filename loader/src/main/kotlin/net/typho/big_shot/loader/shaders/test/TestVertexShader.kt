@@ -28,9 +28,19 @@ class TestVertexShader : JavaShader.Vertex() {
     override fun main() {
         var i = 0
 
+        val vec = Vector3f(pos)
+
+        if (vec.x > 10) {
+            i += 2
+        } else {
+            i += 40
+        }
+
+        /*
         repeat(10) {
             i++
         }
+         */
     }
 }
 

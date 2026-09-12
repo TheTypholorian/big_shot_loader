@@ -1,49 +1,55 @@
 package net.typho.big_shot.loader.shaders.bytecode
 
+import net.typho.big_shot.loader.shaders.reflect.JavaShaderCompilationException
 import org.objectweb.asm.Type
 
 sealed interface ShaderBytecodeType {
     companion object {
         @JvmField
-        val BYTE = Integer(8, true)
+        val BYTE = Integer(8, true, Type.BYTE_TYPE)
         @JvmField
-        val SHORT = Integer(16, true)
+        val SHORT = Integer(16, true, Type.SHORT_TYPE)
         @JvmField
-        val INT = Integer(32, true)
+        val INT = Integer(32, true, Type.INT_TYPE)
         @JvmField
-        val LONG = Integer(64, true)
+        val LONG = Integer(64, true, Type.LONG_TYPE)
         @JvmField
-        val FLOAT = Float(32)
+        val FLOAT = Float(32, Type.FLOAT_TYPE)
         @JvmField
-        val DOUBLE = Float(64)
+        val DOUBLE = Float(64, Type.DOUBLE_TYPE)
 
         @JvmField
-        val VECTOR2D = Vector(DOUBLE, 2)
+        val VECTOR2D = Vector(DOUBLE, 2, Type.getObjectType("org/joml/Vector2dc"))
         @JvmField
-        val VECTOR2F = Vector(FLOAT, 2)
+        val VECTOR2F = Vector(FLOAT, 2, Type.getObjectType("org/joml/Vector2fc"))
         @JvmField
-        val VECTOR2I = Vector(INT, 2)
+        val VECTOR2I = Vector(INT, 2, Type.getObjectType("org/joml/Vector2ic"))
         @JvmField
-        val VECTOR2L = Vector(LONG, 2)
+        val VECTOR2L = Vector(LONG, 2, Type.getObjectType("org/joml/Vector2Lc"))
         @JvmField
-        val VECTOR3D = Vector(DOUBLE, 3)
+        val VECTOR3D = Vector(DOUBLE, 3, Type.getObjectType("org/joml/Vector3dc"))
         @JvmField
-        val VECTOR3F = Vector(FLOAT, 3)
+        val VECTOR3F = Vector(FLOAT, 3, Type.getObjectType("org/joml/Vector3fc"))
         @JvmField
-        val VECTOR3I = Vector(INT, 3)
+        val VECTOR3I = Vector(INT, 3, Type.getObjectType("org/joml/Vector3ic"))
         @JvmField
-        val VECTOR3L = Vector(LONG, 3)
+        val VECTOR3L = Vector(LONG, 3, Type.getObjectType("org/joml/Vector3Lc"))
         @JvmField
-        val VECTOR4D = Vector(DOUBLE, 4)
+        val VECTOR4D = Vector(DOUBLE, 4, Type.getObjectType("org/joml/Vector4dc"))
         @JvmField
-        val VECTOR4F = Vector(FLOAT, 4)
+        val VECTOR4F = Vector(FLOAT, 4, Type.getObjectType("org/joml/Vector4fc"))
         @JvmField
-        val VECTOR4I = Vector(INT, 4)
+        val VECTOR4I = Vector(INT, 4, Type.getObjectType("org/joml/Vector4ic"))
         @JvmField
-        val VECTOR4L = Vector(LONG, 4)
+        val VECTOR4L = Vector(LONG, 4, Type.getObjectType("org/joml/Vector4Lc"))
 
         @JvmStatic
         fun convertJavaType(type: Type): ShaderBytecodeType {
+            return tryConvertJavaType(type) ?: throw JavaShaderCompilationException("Cannot convert type $type to spir-v")
+        }
+
+        @JvmStatic
+        fun tryConvertJavaType(type: Type): ShaderBytecodeType? {
             return when (type.sort) {
                 Type.VOID -> Void
                 Type.BOOLEAN -> Bool
@@ -89,13 +95,15 @@ sealed interface ShaderBytecodeType {
                 Type.METHOD -> Function(convertJavaType(type.returnType), type.argumentTypes.map { convertJavaType(it) })
                 // TODO other types
 
-                else -> throw IllegalArgumentException("Cannot convert type $type to spir-v")
+                else -> null
             }
         }
     }
 
     val rootType: ShaderBytecodeType
         get() = this
+    val javaType: Type?
+        get() = null
 
     fun createLabelNode(): ShaderLabelNode = ShaderLabelNode(toString())
 
@@ -110,6 +118,9 @@ sealed interface ShaderBytecodeType {
     }
 
     object Void : ShaderBytecodeType {
+        override val javaType: Type?
+            get() = Type.VOID_TYPE
+
         override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_VOID, result)
         }
@@ -120,6 +131,9 @@ sealed interface ShaderBytecodeType {
     }
 
     object Bool : ShaderBytecodeType {
+        override val javaType: Type?
+            get() = Type.BOOLEAN_TYPE
+
         override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_BOOL, result)
         }
@@ -133,7 +147,8 @@ sealed interface ShaderBytecodeType {
         @JvmField
         val width: Int,
         @JvmField
-        val signed: Boolean
+        val signed: Boolean,
+        override val javaType: Type? = null
     ) : Numerical {
         override fun getConstant(value: Number): ShaderConstant {
             return ShaderConstant(this, listOf(if (width > 32) value.toLong() else value.toInt()))
@@ -157,7 +172,8 @@ sealed interface ShaderBytecodeType {
 
     data class Float(
         @JvmField
-        val width: Int
+        val width: Int,
+        override val javaType: Type? = null
     ) : Numerical {
         override fun getConstant(value: Number): ShaderConstant {
             return ShaderConstant(this, listOf(if (width > 32) value.toDouble() else value.toFloat()))
@@ -176,7 +192,8 @@ sealed interface ShaderBytecodeType {
         @JvmField
         val componentType: ShaderBytecodeType,
         @JvmField
-        val componentCount: Int
+        val componentCount: Int,
+        override val javaType: Type? = null
     ) : ShaderBytecodeType {
         override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_VECTOR, result, componentType, componentCount)
@@ -196,7 +213,8 @@ sealed interface ShaderBytecodeType {
         @JvmField
         val columnType: ShaderBytecodeType,
         @JvmField
-        val columnCount: Int
+        val columnCount: Int,
+        override val javaType: Type? = null
     ) : ShaderBytecodeType {
         override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_MATRIX, result, columnType, columnCount)
@@ -216,7 +234,8 @@ sealed interface ShaderBytecodeType {
         @JvmField
         val returnType: ShaderBytecodeType,
         @JvmField
-        val parameterTypes: List<ShaderBytecodeType>
+        val parameterTypes: List<ShaderBytecodeType>,
+        override val javaType: Type? = null
     ) : ShaderBytecodeType {
         override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_FUNCTION, result, returnType, parameterTypes)
@@ -237,7 +256,8 @@ sealed interface ShaderBytecodeType {
         @JvmField
         val elementType: ShaderBytecodeType,
         @JvmField
-        val length: Int?
+        val length: Int?,
+        override val javaType: Type? = null
     ) : ShaderBytecodeType {
         override val rootType: ShaderBytecodeType
             get() = elementType.rootType
@@ -262,6 +282,9 @@ sealed interface ShaderBytecodeType {
         @JvmField
         val type: ShaderBytecodeType
     ) : ShaderBytecodeType {
+        override val javaType: Type?
+            get() = type.javaType
+
         override fun createInsn(result: ShaderLabelNode, builder: ShaderBytecodeBuilder): ShaderInsnNode {
             return ShaderInsnNode(OP_TYPE_POINTER, result, storageClass, type)
         }

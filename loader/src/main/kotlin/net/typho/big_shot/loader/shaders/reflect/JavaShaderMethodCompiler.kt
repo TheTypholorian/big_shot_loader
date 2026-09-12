@@ -2,6 +2,7 @@ package net.typho.big_shot.loader.shaders.reflect
 
 import net.typho.asm_util.method.MethodPointer
 import net.typho.big_shot.loader.shaders.bytecode.*
+import net.typho.big_shot.loader.util.ExpandingByteBuffer
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.FieldInsnNode
@@ -18,6 +19,7 @@ import org.objectweb.asm.tree.analysis.Analyzer
 import org.objectweb.asm.tree.analysis.BasicInterpreter
 import org.objectweb.asm.tree.analysis.BasicValue
 import org.objectweb.asm.tree.analysis.Frame
+import kotlin.collections.get
 
 class JavaShaderMethodCompiler(
     @JvmField
@@ -25,38 +27,34 @@ class JavaShaderMethodCompiler(
     @JvmField
     val node: MethodNode,
     @JvmField
-    val function: ShaderFunction
+    val function: ShaderFunction<ShaderFunction.Instruction>
 ) {
     @JvmField
     val stack = Stack()
     @JvmField
     val locals = mutableMapOf<Int, Local>()
     private val jumpTargets = mutableMapOf<LabelNode, ShaderLabelNode>()
-    private lateinit var frames: Array<Frame<BasicValue>>
 
-    fun loadLocal(index: Int, frame: Frame<BasicValue>): Local {
+    fun loadLocal(index: Int, type: ShaderBytecodeType): Local {
         println("loading local $index")
-
-        val javaType = frame.getLocal(index).type ?: frame.getStack(frame.stackSize - 1).type
-        val type = ShaderBytecodeType.convertJavaType(javaType)
 
         return if (type is ShaderBytecodeType.Array) {
             Local.NewArray(type)
         } else {
-            val variable = parent.getTypeHandler(javaType)?.createLocalVariable(this@JavaShaderMethodCompiler, javaType, type) ?: ShaderVariable(ShaderBytecodeType.Pointer(STORAGE_CLASS_FUNCTION, type), ShaderLabelNode(), javaType = javaType)
+            val variable = ShaderVariable(ShaderBytecodeType.Pointer(STORAGE_CLASS_FUNCTION, type), ShaderLabelNode())
             function.instructions.add(ShaderInsnNode(OP_VARIABLE, variable.type, variable.label, variable.type.storageClass, variable.initializer))
             Local.Variable(variable)
         }
     }
 
-    fun getOrLoadLocal(index: Int, frame: Frame<BasicValue>) = locals.computeIfAbsent(index) { loadLocal(index, frame) }
+    fun getOrLoadLocal(index: Int, type: ShaderBytecodeType) = locals.computeIfAbsent(index) { loadLocal(index, type) }
 
     fun compile() {
         stack.clear()
         locals.clear()
         jumpTargets.clear()
 
-        frames = Analyzer(BasicInterpreter()).analyze(parent.node.name, node)
+        //frames = Analyzer(BasicInterpreter()).analyze(parent.node.name, node)
 
         val static = node.access and Opcodes.ACC_STATIC != 0
 
@@ -67,8 +65,9 @@ class JavaShaderMethodCompiler(
         function.instructions.clear()
         function.instructions.apply {
             Type.getArgumentTypes(node.desc).forEachIndexed { index, type ->
+                val type = ShaderBytecodeType.convertJavaType(type)
                 val label = ShaderLabelNode()
-                function.instructions.add(ShaderInsnNode(OP_FUNCTION_PARAMETER, ShaderBytecodeType.convertJavaType(type), label))
+                function.instructions.add(ShaderInsnNode(OP_FUNCTION_PARAMETER, type, label))
                 locals[if (static) index else index + 1] = Local.Argument(label, type)
             }
 
@@ -78,6 +77,7 @@ class JavaShaderMethodCompiler(
                 when (insn.opcode) {
                     -1 -> {
                         if (insn is LabelNode) {
+                            //jumpTargets.computeIfAbsent(insn) { ShaderLabelNode() }?.let {
                             jumpTargets[insn]?.let {
                                 add(ShaderInsnNode(OP_BRANCH, it))
                                 add(ShaderInsnNode(OP_LABEL, it))
@@ -136,8 +136,8 @@ class JavaShaderMethodCompiler(
                         val pointer = ShaderLabelNode()
                         val value = ShaderLabelNode()
                         add(ShaderInsnNode(OP_ACCESS_CHAIN, array.variable.type, pointer, array.variable.label, index))
-                        add(ShaderInsnNode(OP_LOAD, array.variable.type.type.rootType, value, pointer))
-                        stack.push(StackValue.Label(value))
+                        add(ShaderInsnNode(OP_LOAD, array.variable.type.rootType, value, pointer))
+                        stack.push(StackValue.Label(value, array.variable.type.rootType))
                     }
 
                     Opcodes.ISTORE, Opcodes.LSTORE, Opcodes.FSTORE, Opcodes.DSTORE, Opcodes.ASTORE -> {
@@ -145,7 +145,7 @@ class JavaShaderMethodCompiler(
 
                         when (val value = stack.pop()) {
                             is StackValue.Array -> {
-                                val local = getOrLoadLocal(insn.`var`, frames[insnIndex])
+                                val local = getOrLoadLocal(insn.`var`, value.type)
 
                                 if (local !is Local.NewArray) {
                                     TODO("reassigning arrays?")
@@ -153,16 +153,13 @@ class JavaShaderMethodCompiler(
 
                                 locals[insn.`var`] = Local.Variable(value.variable)
                             }
+                            // TODO
+                            /*
                             is StackValue.LoadVariable -> if (value.variable.type.type is ShaderBytecodeType.Vector) {
                                 throw JavaShaderCompilationException("Cannot store a mutable ${value.variable.type.type} value from one variable in another, since joml vectors are mutable while glsl vectors are immutable.")
                             }
-                            else -> function.instructions.add(
-                                ShaderInsnNode(
-                                    OP_STORE,
-                                    getOrLoadLocal(insn.`var`, frames[insnIndex]).variable!!.label,
-                                    value.label!!
-                                )
-                            )
+                             */
+                            else -> getOrLoadLocal(insn.`var`, value.type!!).store(this@JavaShaderMethodCompiler, value)!!
                         }
                     }
 
@@ -231,13 +228,12 @@ class JavaShaderMethodCompiler(
                     Opcodes.IINC -> {
                         insn as IincInsnNode
                         val value = parent.builder.getConstant(ShaderConstant(ShaderBytecodeType.INT, listOf(insn.incr)))
-                        val local = getOrLoadLocal(insn.`var`, frames[insnIndex])
-                        val temp = ShaderLabelNode()
+                        val local = getOrLoadLocal(insn.`var`, ShaderBytecodeType.INT)
+                        val temp = local.load(this@JavaShaderMethodCompiler)!!
                         val result = ShaderLabelNode()
 
-                        add(ShaderInsnNode(OP_LOAD, local.variable!!.type.type, temp, local.variable!!.label))
-                        function.instructions.add(ShaderInsnNode(OP_I_ADD, local.variable!!.type.type, result, temp, value))
-                        add(ShaderInsnNode(OP_STORE, local.variable!!.label, result))
+                        function.instructions.add(ShaderInsnNode(OP_I_ADD, ShaderBytecodeType.INT /* TODO */, result, temp.label!!, value))
+                        local.store(this@JavaShaderMethodCompiler, StackValue.Label(result, ShaderBytecodeType.INT))!!
                     }
 
                     Opcodes.I2L -> cast(OP_S_CONVERT, ShaderBytecodeType.LONG)
@@ -338,7 +334,7 @@ class JavaShaderMethodCompiler(
                             add(func.call(result, *args))
 
                             if (func.type.returnType != ShaderBytecodeType.Void) {
-                                stack.push(StackValue.Label(result))
+                                stack.push(StackValue.Label(result, func.type.returnType))
                             }
 
                             return@forEachIndexed
@@ -407,7 +403,7 @@ class JavaShaderMethodCompiler(
 
         val r = ShaderLabelNode()
         function.instructions.add(ShaderInsnNode(opcode, to, r, v.label))
-        stack.push(StackValue.Label(r))
+        stack.push(StackValue.Label(r, to))
     }
 
     fun math(opcode: Int, result: ShaderBytecodeType) {
@@ -415,14 +411,14 @@ class JavaShaderMethodCompiler(
         val a = stack.pop().label!!
         val r = ShaderLabelNode()
         function.instructions.add(ShaderInsnNode(opcode, result, r, a, b))
-        stack.push(StackValue.Label(r))
+        stack.push(StackValue.Label(r, result))
     }
 
     fun mathUnary(opcode: Int, result: ShaderBytecodeType) {
         val a = stack.pop().label!!
         val r = ShaderLabelNode()
         function.instructions.add(ShaderInsnNode(opcode, result, r, a))
-        stack.push(StackValue.Label(r))
+        stack.push(StackValue.Label(r, result))
     }
 
     fun jump(comparisonOpcode: Int, floatComparisonOpcode: Int, target: LabelNode) {
@@ -508,19 +504,24 @@ class JavaShaderMethodCompiler(
     sealed interface StackValue {
         val label: ShaderLabelNode?
             get() = null
+        val type: ShaderBytecodeType?
+            get() = null
 
         data class Label(
-            override val label: ShaderLabelNode
+            override val label: ShaderLabelNode,
+            override val type: ShaderBytecodeType?
         ) : StackValue
 
         class LoadVariable(
-            instructions: MutableList<ShaderInsnNode>,
+            instructions: MutableList<ShaderFunction.Instruction>,
             @JvmField
             val variable: ShaderVariable
         ) : StackValue {
             override val label: ShaderLabelNode by lazy {
                 ShaderLabelNode().also { instructions.add(ShaderInsnNode(OP_LOAD, variable.type.type, it, variable.label)) }
             }
+            override val type: ShaderBytecodeType
+                get() = variable.type
 
             override fun equals(other: Any?): Boolean {
                 if (this === other) return true
@@ -547,6 +548,8 @@ class JavaShaderMethodCompiler(
             val const: ShaderConstant
         ) : StackValue {
             override val label: ShaderLabelNode by lazy { builder.getConstant(const) }
+            override val type: ShaderBytecodeType
+                get() = const.type
         }
 
         data class StringConstant(
@@ -566,7 +569,10 @@ class JavaShaderMethodCompiler(
         data class Array(
             @JvmField
             val variable: ShaderVariable
-        ) : StackValue
+        ) : StackValue {
+            override val type: ShaderBytecodeType
+                get() = variable.type
+        }
 
         data class NewObject(
             @JvmField
@@ -590,24 +596,32 @@ class JavaShaderMethodCompiler(
     }
 
     sealed interface Local {
-        val variable: ShaderVariable?
-            get() = null
-
         fun load(compiler: JavaShaderMethodCompiler): StackValue? = null
 
+        fun store(compiler: JavaShaderMethodCompiler, value: StackValue): Unit? = null
+
         data class Variable(
-            override val variable: ShaderVariable
+            @JvmField
+            val variable: ShaderVariable
         ) : Local {
             override fun load(compiler: JavaShaderMethodCompiler) = StackValue.LoadVariable(compiler.function.instructions, variable)
+
+            override fun store(compiler: JavaShaderMethodCompiler, value: StackValue) {
+                compiler.function.instructions.add(ShaderInsnNode(OP_STORE, variable.label, value.label!!))
+            }
         }
 
         data class Argument(
             @JvmField
             val label: ShaderLabelNode,
             @JvmField
-            val type: Type
+            val type: ShaderBytecodeType
         ) : Local {
-            override fun load(compiler: JavaShaderMethodCompiler) = StackValue.Label(label)
+            override fun load(compiler: JavaShaderMethodCompiler) = StackValue.Label(label, type)
+
+            override fun store(compiler: JavaShaderMethodCompiler, value: StackValue) {
+                throw JavaShaderCompilationException("Cannot modify an argument's value, create a new variable.")
+            }
         }
 
         data class NewArray(

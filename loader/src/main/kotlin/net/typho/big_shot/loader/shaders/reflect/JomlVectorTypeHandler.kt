@@ -167,7 +167,7 @@ abstract class JomlVectorTypeHandler(
                 function.instructions.add(ShaderInsnNode(OP_STORE, dest.variable.label, result))
                 stack.push(StackValue.LoadVariable(function.instructions, dest.variable))
             } else {
-                stack.push(StackValue.Label(result))
+                stack.push(StackValue.Label(result, dest.type))
             }
         }
 
@@ -184,7 +184,7 @@ abstract class JomlVectorTypeHandler(
         fun JavaShaderMethodCompiler.vectorInit(type: ShaderBytecodeType.Vector, vararg values: StackValue) {
             val vec = createVector(type, *values)
             val self = stack.pop() as StackValue.NewObject
-            stack.replace(self, StackValue.Label(vec))
+            stack.replace(self, StackValue.Label(vec, type))
         }
     }
 
@@ -249,14 +249,6 @@ abstract class JomlVectorTypeHandler(
         // TODO error on illegal cast
     }
 
-    override fun createLocalVariable(
-        compiler: JavaShaderMethodCompiler,
-        javaType: Type,
-        type: ShaderBytecodeType
-    ): ShaderVariable? {
-        return null
-    }
-
     protected open fun handleComponentOp(compiler: JavaShaderMethodCompiler, op: FieldInsnNode, index: Int): Boolean {
         if (index < 0 || index >= type.componentCount) {
             return false
@@ -268,7 +260,7 @@ abstract class JomlVectorTypeHandler(
 
                 val result = ShaderLabelNode()
                 compiler.function.instructions.add(ShaderInsnNode(OP_COMPOSITE_EXTRACT, type, result, vector))
-                compiler.stack.push(StackValue.Label(result))
+                compiler.stack.push(StackValue.Label(result, type.componentType))
                 return true
             }
             Opcodes.PUTFIELD -> {
@@ -302,10 +294,10 @@ abstract class JomlVectorTypeHandler(
     }
 
     protected open fun handleNoArgVector(compiler: JavaShaderMethodCompiler) {
-        val zero = StackValue.Label(compiler.parent.builder.getConstant((type.componentType as ShaderBytecodeType.Numerical).getConstant(0)))
+        val zero = StackValue.Label(compiler.parent.builder.getConstant((type.componentType as ShaderBytecodeType.Numerical).getConstant(0)), type.componentType)
 
         if (type.componentCount == 4) {
-            val one = StackValue.Label(compiler.parent.builder.getConstant(type.componentType.getConstant(1)))
+            val one = StackValue.Label(compiler.parent.builder.getConstant(type.componentType.getConstant(1)), type.componentType)
             compiler.vectorInit(type, zero, zero, zero, one)
         } else {
             compiler.vectorInit(type, zero)
@@ -326,8 +318,8 @@ abstract class JomlVectorTypeHandler(
                     val pointer = ShaderLabelNode()
                     val value = ShaderLabelNode()
                     compiler.function.instructions.add(ShaderInsnNode(OP_ACCESS_CHAIN, array.variable.type, pointer, array.variable.label, index))
-                    compiler.function.instructions.add(ShaderInsnNode(OP_LOAD, array.variable.type.type.rootType, value, pointer))
-                    StackValue.Label(value)
+                    compiler.function.instructions.add(ShaderInsnNode(OP_LOAD, type.componentType, value, pointer))
+                    StackValue.Label(value, type.componentType)
                 }
                 compiler.vectorInit(type, *components)
             }
@@ -341,7 +333,7 @@ abstract class JomlVectorTypeHandler(
                                 Double3c.classType, Float3c.classType, Int3c.classType -> { // TODO abstractify
                                     val targetLabel = ShaderLabelNode()
                                     compiler.function.instructions.add(ShaderInsnNode(OP_VECTOR_SHUFFLE, type, targetLabel, compiler.stack.pop().label!!, 0, 1))
-                                    compiler.vectorInit(type, StackValue.Label(targetLabel))
+                                    compiler.vectorInit(type, StackValue.Label(targetLabel, type))
                                     return true
                                 }
                             }
@@ -399,7 +391,7 @@ abstract class JomlVectorTypeHandler(
                 getIntc(type.componentCount).classType -> {
                     val targetLabel = ShaderLabelNode()
                     compiler.function.instructions.add(ShaderInsnNode(OP_CONVERT_S_TO_F, type, targetLabel, input.label))
-                    StackValue.Label(targetLabel)
+                    StackValue.Label(targetLabel, type)
                 }
                 else -> null
             }
@@ -423,12 +415,12 @@ abstract class JomlVectorTypeHandler(
                 getDoublec(type.componentCount).classType -> {
                     val targetLabel = ShaderLabelNode()
                     compiler.function.instructions.add(ShaderInsnNode(OP_F_CONVERT, type, targetLabel, input.label))
-                    StackValue.Label(targetLabel)
+                    StackValue.Label(targetLabel, type)
                 }
                 getIntc(type.componentCount).classType -> {
                     val targetLabel = ShaderLabelNode()
                     compiler.function.instructions.add(ShaderInsnNode(OP_CONVERT_S_TO_F, type, targetLabel, input.label))
-                    StackValue.Label(targetLabel)
+                    StackValue.Label(targetLabel, type)
                 }
                 else -> null
             }
@@ -452,7 +444,7 @@ abstract class JomlVectorTypeHandler(
                 getIntc(type.componentCount).classType -> {
                     val targetLabel = ShaderLabelNode()
                     compiler.function.instructions.add(ShaderInsnNode(OP_S_CONVERT, type, targetLabel, input.label))
-                    StackValue.Label(targetLabel)
+                    StackValue.Label(targetLabel, type)
                 }
                 else -> null
             }
