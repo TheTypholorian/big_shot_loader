@@ -473,7 +473,7 @@ class JavaShaderMethodCompiler(
     }
 
     fun jump(target: LabelNode) {
-        val target = jumpTargets.computeIfAbsent(target) { ShaderLabelNode() } // TODO the target label might already have been written
+        val target = jumpTargets.computeIfAbsent(target) { ShaderLabelNode() }
         function.instructions.add(ShaderInsnNode(OP_BRANCH, target))
     }
 

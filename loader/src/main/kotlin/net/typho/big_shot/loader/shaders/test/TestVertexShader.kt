@@ -30,10 +30,8 @@ class TestVertexShader : JavaShader.Vertex() {
 
         if (vec.x > 10) {
             var f = 10f
-            f++
         } else {
             var i = 10
-            i++
         }
 
         vec.x = 10f
